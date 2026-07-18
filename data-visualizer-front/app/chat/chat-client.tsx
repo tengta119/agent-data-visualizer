@@ -2,7 +2,7 @@
 
 import { startTransition, useMemo, useRef, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import FluentConsolePreview from "@/app/components/fluent-console-preview";
+import AgentDrawIoPanel from "@/app/components/agent-drawio-panel";
 import {
   ensureSuccess,
   isBackendUnavailableError,
@@ -208,12 +208,12 @@ export default function ChatClient({
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col overflow-hidden">
+    <div className="relative flex h-screen w-full flex-col overflow-hidden">
       <div className="pointer-events-none absolute left-[8%] top-6 h-48 w-48 rounded-full bg-[radial-gradient(circle,rgba(148,192,255,0.48),rgba(148,192,255,0))]" />
       <div className="pointer-events-none absolute bottom-8 right-[6%] h-64 w-64 rounded-full bg-[radial-gradient(circle,rgba(193,221,255,0.78),rgba(193,221,255,0))]" />
 
       <header className="sticky top-0 z-10 border-b border-white/58 bg-[rgba(247,250,255,0.62)] backdrop-blur-[26px]">
-        <div className="mx-auto flex w-full max-w-[1320px] flex-wrap items-start justify-between gap-x-4 gap-y-3 px-5 py-4">
+        <div className="flex w-full flex-wrap items-start justify-between gap-x-4 gap-y-3 px-3 py-3.5 md:px-4 md:py-4">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,#ffffff,#dceafe)] text-sm font-bold tracking-[0.08em] text-[#0f6cfd] shadow-[0_10px_24px_rgba(107,140,194,0.16)]">
               DV
@@ -266,72 +266,21 @@ export default function ChatClient({
         </div>
       </header>
 
-      <main className="flex flex-1 justify-center px-4 py-5 md:px-5">
-        <div className="grid h-[calc(100vh-104px)] w-full max-w-[1320px] gap-5 lg:grid-cols-[380px_1fr]">
-          <aside className="glass-panel hidden min-h-0 rounded-[34px] p-5 lg:flex lg:flex-col lg:gap-4">
-            <div>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {["Fluent 2", "Acrylic", "Control Hub"].map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-full border border-white/86 bg-white/70 px-3 py-1 text-[11px] font-medium text-[#4b6fa5]"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-              <h2 className="text-sm font-semibold text-[#1f3657]">当前会话</h2>
-              <p className="mt-2 text-xs leading-6 text-[var(--muted)]">
-                侧边栏提供系统状态和上下文摘要，主区域保持清晰的消息节奏与系统级反馈。
-              </p>
-            </div>
+      <main className="flex min-h-0 flex-1 overflow-hidden px-2 py-3 md:px-3 md:py-4">
+        <div className="grid h-full min-h-0 w-full min-w-0 gap-3 md:gap-4 lg:grid-cols-[3fr_1fr]">
+          <AgentDrawIoPanel
+            userId={userId}
+            sessionId={sessionId}
+            agentLabel={
+              selectedAgent
+                ? `${selectedAgent.agentName || selectedAgent.agentId}${
+                    selectedAgent.agentDesc ? ` - ${selectedAgent.agentDesc}` : ""
+                  }`
+                : "-"
+            }
+          />
 
-            <FluentConsolePreview compact />
-
-            <div className="grid gap-3">
-              <MetaCard label="用户 ID" value={userId || "-"} />
-              <MetaCard
-                label="智能体"
-                value={
-                  selectedAgent
-                    ? `${selectedAgent.agentName || selectedAgent.agentId}${
-                        selectedAgent.agentDesc ? ` - ${selectedAgent.agentDesc}` : ""
-                      }`
-                    : "-"
-                }
-              />
-              <MetaCard label="最近会话" value={sessionId || "-"} />
-            </div>
-
-            <div className="surface-panel rounded-[26px] border border-white/84 px-4 py-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[#244368]">系统响应</span>
-                <span className="text-[11px] text-[#6b82a0]">Smooth</span>
-              </div>
-              <div className="mt-3 space-y-2.5">
-                {[
-                  ["Hover 动效", "180ms"],
-                  ["交互层次", "Acrylic"],
-                  ["信息密度", "Balanced"],
-                ].map(([label, value], index) => (
-                  <div key={label}>
-                    <div className="mb-1.5 flex justify-between text-[11px] text-[#61748f]">
-                      <span>{label}</span>
-                      <span>{value}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-[#e6edf8]">
-                      <div
-                        className="h-2 rounded-full bg-[linear-gradient(90deg,#0f6cfd,#85afff)]"
-                        style={{ width: `${86 - index * 12}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </aside>
-
-          <section className="glass-panel flex min-h-0 flex-col overflow-hidden rounded-[34px]">
+          <section className="glass-panel flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[34px]">
             <div className="border-b border-[var(--line)] px-5 py-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -488,19 +437,6 @@ curl -s ${apiBase}/api/v1/query_ai_agent_config_list
           </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function MetaCard({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="surface-panel rounded-[24px] border border-white/84 px-4 py-3">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs text-[var(--muted-soft)]">{label}</span>
-        <b className="max-w-[70%] truncate text-xs font-semibold text-[#203c61]">
-          {value}
-        </b>
-      </div>
     </div>
   );
 }

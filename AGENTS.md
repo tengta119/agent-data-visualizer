@@ -8,6 +8,9 @@
 本仓库由 Java 后端和 Next.js 前端组成。根目录 `pom.xml` 聚合了 `data-visualizer-api`、`data-visualizer-app`、`data-visualizer-domain`、`data-visualizer-trigger`、`data-visualizer-infrastructure` 和 `data-visualizer-types`。各 Java 模块源码位于 `src/main/java`，测试主要位于 `data-visualizer-app/src/test/java`，运行配置、MyBatis 和 agent 配置位于 `data-visualizer-app/src/main/resources`。前端位于 `data-visualizer-front`，App Router 文件在 `app/`，静态资源在 `public/`。部署脚本和环境示例集中在 `docs/dev-ops/`。
 
 ## 构建、测试与开发命令
+
+使用pwsh执行指令
+
 不需要执行构建、测试命令，由开发人员手动执行
 
 ## 代码风格与命名约定
