@@ -1,0 +1,11 @@
+.idea
+# Exported private content
+exports/
+*.log
+*.err.log
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+data
