@@ -1,10 +1,15 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import LoginClient from "./login-client";
 import { COOKIE_NAME, parseLoginPayload } from "@/lib/agent-auth";
 
-export default async function Home() {
+export default async function LoginPage() {
   const cookieStore = await cookies();
   const payload = parseLoginPayload(cookieStore.get(COOKIE_NAME)?.value);
 
-  redirect(payload?.user ? "/chat" : "/login");
+  if (payload?.user) {
+    redirect("/chat");
+  }
+
+  return <LoginClient />;
 }

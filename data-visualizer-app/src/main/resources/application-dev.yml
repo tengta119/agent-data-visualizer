@@ -16,6 +16,7 @@ thread:
 spring:
   config:
     import:
+      - classpath:application-secret.yml
 #      - classpath:agent/test-agent-02.yml
 #      - classpath:agent/test-agent.yml
       - classpath:agent/only-one-agent.yml

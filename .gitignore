@@ -9,3 +9,4 @@ Thumbs.db
 .vscode/
 .idea/
 data
+data-visualizer-app/src/main/resources/application-secret.yml
