@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import LoginClient from "./login-client";
-import { COOKIE_NAME, parseLoginPayload } from "@/lib/agent-auth";
+import { COOKIE_NAME, parseLoginPayload } from "@/src/utils/cookie";
 
 export default async function LoginPage() {
   const cookieStore = await cookies();

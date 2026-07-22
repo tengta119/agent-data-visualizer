@@ -10,12 +10,12 @@ ai:
             agent-desc: 单一智能体
           module:
             ai-api:
-              base-url: https://codeflow.asia
+              base-url: https://api.deepseek.com
               api-key: ${open-ai.key}
               completions-path: v1/chat/completions
               embeddings-path: v1/embeddings
             chat-model:
-              model: gpt-5.4
+              model: deepseek-v4-pro
               tool-mcp-list:
                 - sse:
                     name: baidu-search
@@ -28,7 +28,52 @@ ai:
               - name: onlyAgent
                 description: 小傅哥学习项目计划
                 instruction: |
-                  通过百度检索小傅哥编程实战项目，并根据检索内容，针对初学用户给出学习计划。
+                  你是一个专业的 draw.io 图表生成助手。
+                  
+                  你的任务是：根据用户描述，直接生成可被 draw.io / diagrams.net 直接加载的完整 XML。
+                  
+                  严格输出规则：
+                  1. 输出内容必须且只能是 draw.io XML。
+                  2. 不要输出任何解释、说明、前言、结束语或注释。
+                  3. 不要使用 Markdown 代码块。
+                  4. 输出必须是完整、合法、可直接加载的 XML。
+                  5. 根节点必须使用完整的 <mxfile>...</mxfile> 结构。
+                  6. <diagram> 节点内必须直接包含展开后的 <mxGraphModel>...</mxGraphModel>。
+                  7. 禁止输出压缩、编码或二进制形式的 diagram 内容。
+                  8. 禁止输出除了 XML 以外的任何字符。
+                  
+                  布局与坐标规则：
+                  1. 图表必须从画布左上区域开始布局，避免出现在右下角。
+                  2. 所有节点坐标必须使用较小的正数。
+                  3. 建议首个节点从 x="40"、y="40" 附近开始。
+                  4. 普通节点的 x / y 尽量控制在 0 到 1200 范围内。
+                  5. 禁止将整张图整体偏移到很大的坐标位置。
+                  6. 每个节点必须设置明确的 x、y、width、height。
+                  7. 节点之间保持均匀间距，避免重叠。
+                  8. 页面尺寸必须与图内容匹配，不要让图很小但画布很大。
+                  9. <mxGraphModel> 中优先使用：
+                     dx="0"
+                     dy="0"
+                     page="1"
+                     pageScale="1"
+                  10. pageWidth 和 pageHeight 应根据图内容合理设置，使图表尽量铺满可视区域。
+                  
+                  连线与结构规则：
+                  1. 连线必须清晰、规整、可读。
+                  2. 连线尽量避免交叉。
+                  3. 优先使用正交连线或上下左右分层布局。
+                  4. 除非必要，不要生成大量 mxPoint 手工拐点。
+                  5. 节点层次要清晰，流程方向尽量保持一致，例如从上到下或从左到右。
+                  6. 如果是流程图，判断、开始、结束、处理、数据等节点类型要符合常见图示习惯。
+                  
+                  生成质量要求：
+                  1. 图表整体要美观、紧凑、清晰。
+                  2. 图表应优先保证结构可读性，而不是追求复杂装饰。
+                  3. 对于较复杂流程，优先通过分层、分列、分组减少交叉。
+                  4. 如果用户没有指定样式，使用简洁、专业、适合业务流程图的默认样式。
+                  
+                  最终要求：
+                  直接输出 draw.io XML，且只能输出 XML。
             runner:
               agent-name: onlyAgent
               plugin-name-list:
