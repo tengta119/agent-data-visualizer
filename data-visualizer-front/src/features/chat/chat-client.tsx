@@ -10,13 +10,33 @@ import {
   queryAgentConfigList,
 } from "@/src/api/agent";
 import { COOKIE_NAME, deleteCookieValue, formatTime } from "@/src/utils/cookie";
-import type { AgentConfig } from "@/src/types/api";
+import type { AgentConfig, ChatResult } from "@/src/types/api";
 
 type ChatBubble = {
   id: string;
   side: "user" | "agent";
   text: string;
   meta?: string;
+};
+
+type ChatBookmark = {
+  id: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+  userId: string;
+  selectedAgentId: string;
+  selectedAgentLabel: string;
+  sessionId: string;
+  bubbles: ChatBubble[];
+  diagramXml: string | null;
+  inputPlaceholder: string;
+};
+
+type ChatBookmarkStore = {
+  version: 1;
+  activeBookmarkId: string | null;
+  bookmarks: ChatBookmark[];
 };
 
 type ChatClientProps = {
@@ -27,10 +47,9 @@ type ChatClientProps = {
   loginTs: number | null;
 };
 
-type ParsedAgentReply = {
-  chatText: string;
-  diagramXml: string | null;
-};
+const DEFAULT_INPUT_PLACEHOLDER =
+  "请输入问题，Ctrl/Command + Enter 发送，Enter 换行";
+const BOOKMARK_STORE_VERSION = 1;
 
 function createBubble(
   side: ChatBubble["side"],
@@ -45,12 +64,46 @@ function createBubble(
   };
 }
 
-function normalizeMxGraphModel(graphModelXml: string) {
-  return `<mxfile host="app.diagrams.net" modified="${new Date().toISOString()}" agent="Codex" version="26.0.11">
-  <diagram id="agent-workbench" name="Agent Workbench">
-${graphModelXml}
-  </diagram>
-</mxfile>`;
+function buildInputPlaceholder(prompt: string) {
+  const compactPrompt = prompt.replace(/\s+/g, " ").trim();
+  if (!compactPrompt) {
+    return DEFAULT_INPUT_PLACEHOLDER;
+  }
+
+  const shortPrompt =
+    compactPrompt.length > 42
+      ? `${compactPrompt.slice(0, 41)}…`
+      : compactPrompt;
+
+  return `请补充：${shortPrompt}`;
+}
+
+function buildBookmarkTitle(text: string) {
+  const compactText = text.replace(/\s+/g, " ").trim();
+  if (!compactText) {
+    return `新对话 ${formatTime(Date.now())}`;
+  }
+  return compactText.length > 18 ? `${compactText.slice(0, 18)}…` : compactText;
+}
+
+function createBookmarkStorageKey(userId: string) {
+  return `ai_agent_chat_bookmarks:${userId}`;
+}
+
+function createEmptyStore(): ChatBookmarkStore {
+  return {
+    version: BOOKMARK_STORE_VERSION,
+    activeBookmarkId: null,
+    bookmarks: [],
+  };
+}
+
+function safeParseJson<T>(text: string) {
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
 }
 
 function base64ToUint8Array(base64: string) {
@@ -63,7 +116,9 @@ function base64ToUint8Array(base64: string) {
 }
 
 async function tryInflate(bytes: Uint8Array, format: "deflate-raw" | "deflate") {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream(format));
+  const stream = new Blob([bytes]).stream().pipeThrough(
+    new DecompressionStream(format),
+  );
   const buffer = await new Response(stream).arrayBuffer();
   return new TextDecoder().decode(buffer);
 }
@@ -150,7 +205,9 @@ async function normalizeDrawIoXml(xml: string) {
       doc.querySelectorAll('mxCell[vertex="1"] > mxGeometry'),
     );
     const edgePoints = Array.from(
-      doc.querySelectorAll('mxCell[edge="1"] mxGeometry mxPoint[x], mxCell[edge="1"] mxGeometry Array mxPoint[x]'),
+      doc.querySelectorAll(
+        'mxCell[edge="1"] mxGeometry mxPoint[x], mxCell[edge="1"] mxGeometry Array mxPoint[x]',
+      ),
     );
 
     let minX = Number.POSITIVE_INFINITY;
@@ -187,7 +244,7 @@ async function normalizeDrawIoXml(xml: string) {
     }
 
     if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
-      return xml;
+      return expandedXml;
     }
 
     const margin = 48;
@@ -201,10 +258,16 @@ async function normalizeDrawIoXml(xml: string) {
       const y = Number(geometry.getAttribute("y") ?? "0");
 
       if (Number.isFinite(x)) {
-        geometry.setAttribute("x", String(Math.round((x + offsetX) * 100) / 100));
+        geometry.setAttribute(
+          "x",
+          String(Math.round((x + offsetX) * 100) / 100),
+        );
       }
       if (Number.isFinite(y)) {
-        geometry.setAttribute("y", String(Math.round((y + offsetY) * 100) / 100));
+        geometry.setAttribute(
+          "y",
+          String(Math.round((y + offsetY) * 100) / 100),
+        );
       }
     }
 
@@ -213,10 +276,16 @@ async function normalizeDrawIoXml(xml: string) {
       const y = Number(point.getAttribute("y") ?? "0");
 
       if (Number.isFinite(x)) {
-        point.setAttribute("x", String(Math.round((x + offsetX) * 100) / 100));
+        point.setAttribute(
+          "x",
+          String(Math.round((x + offsetX) * 100) / 100),
+        );
       }
       if (Number.isFinite(y)) {
-        point.setAttribute("y", String(Math.round((y + offsetY) * 100) / 100));
+        point.setAttribute(
+          "y",
+          String(Math.round((y + offsetY) * 100) / 100),
+        );
       }
     }
 
@@ -230,7 +299,9 @@ async function normalizeDrawIoXml(xml: string) {
     graphModel.setAttribute("pageWidth", String(contentWidth));
     graphModel.setAttribute("pageHeight", String(contentHeight));
 
-    const rootGeometry = graphModel.querySelector('root > mxCell[id="0"] > mxGeometry');
+    const rootGeometry = graphModel.querySelector(
+      'root > mxCell[id="0"] > mxGeometry',
+    );
     if (rootGeometry) {
       rootGeometry.setAttribute("x", "0");
       rootGeometry.setAttribute("y", "0");
@@ -244,54 +315,32 @@ async function normalizeDrawIoXml(xml: string) {
   }
 }
 
-function extractDrawIoXml(text: string) {
-  const fencedMxfileMatch = text.match(
-    /```(?:xml)?\s*(<mxfile[\s\S]*?<\/mxfile>)\s*```/i,
-  );
-  if (fencedMxfileMatch?.[1]) {
-    return fencedMxfileMatch[1].trim();
-  }
-
-  const mxfileMatch = text.match(/<mxfile[\s\S]*?<\/mxfile>/i);
-  if (mxfileMatch?.[0]) {
-    return mxfileMatch[0].trim();
-  }
-
-  const fencedGraphModelMatch = text.match(
-    /```(?:xml)?\s*(<mxGraphModel[\s\S]*?<\/mxGraphModel>)\s*```/i,
-  );
-  if (fencedGraphModelMatch?.[1]) {
-    return normalizeMxGraphModel(fencedGraphModelMatch[1].trim());
-  }
-
-  const graphModelMatch = text.match(/<mxGraphModel[\s\S]*?<\/mxGraphModel>/i);
-  if (graphModelMatch?.[0]) {
-    return normalizeMxGraphModel(graphModelMatch[0].trim());
-  }
-
-  return null;
+async function normalizeChatResult(result: ChatResult) {
+  return {
+    user: result.user.trim(),
+    drawio: result.drawio ? await normalizeDrawIoXml(result.drawio) : null,
+  };
 }
 
-async function parseAgentReply(reply: string): Promise<ParsedAgentReply> {
-  const diagramXml = extractDrawIoXml(reply);
-  if (!diagramXml) {
-    return {
-      chatText: reply || "(空响应)",
-      diagramXml: null,
-    };
-  }
-
-  const chatText = reply
-    .replace(/```(?:xml)?\s*<mxfile[\s\S]*?<\/mxfile>\s*```/gi, "")
-    .replace(/<mxfile[\s\S]*?<\/mxfile>/gi, "")
-    .replace(/```(?:xml)?\s*<mxGraphModel[\s\S]*?<\/mxGraphModel>\s*```/gi, "")
-    .replace(/<mxGraphModel[\s\S]*?<\/mxGraphModel>/gi, "")
-    .trim();
-
-  return {
-    chatText: chatText || "已生成并同步 draw.io 图表。",
-    diagramXml: diagramXml ? await normalizeDrawIoXml(diagramXml) : null,
-  };
+function restoreConversationStateFromBookmark(
+  bookmark: ChatBookmark,
+  setSelectedAgentId: (value: string) => void,
+  setSessionId: (value: string) => void,
+  setBubbles: (value: ChatBubble[]) => void,
+  setDiagramXml: (value: string | null) => void,
+  setInputPlaceholder: (value: string) => void,
+  setStatus: (value: string) => void,
+  setStatusType: (value: "info" | "error") => void,
+  setMessage: (value: string) => void,
+) {
+  setSelectedAgentId(bookmark.selectedAgentId);
+  setSessionId(bookmark.sessionId);
+  setBubbles(bookmark.bubbles);
+  setDiagramXml(bookmark.diagramXml);
+  setInputPlaceholder(bookmark.inputPlaceholder || DEFAULT_INPUT_PLACEHOLDER);
+  setStatus("已恢复对话书签。");
+  setStatusType("info");
+  setMessage("");
 }
 
 export default function ChatClient({
@@ -303,6 +352,7 @@ export default function ChatClient({
 }: ChatClientProps) {
   const router = useRouter();
   const chatRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [agents, setAgents] = useState(initialAgents);
   const [selectedAgentId, setSelectedAgentId] = useState(
     initialAgents[0]?.agentId ?? "",
@@ -321,10 +371,37 @@ export default function ChatClient({
     initialBackendIssue,
   );
   const [diagramXml, setDiagramXml] = useState<string | null>(null);
+  const [inputPlaceholder, setInputPlaceholder] = useState(
+    DEFAULT_INPUT_PLACEHOLDER,
+  );
+  const [bookmarks, setBookmarks] = useState<ChatBookmark[]>([]);
+  const [activeBookmarkId, setActiveBookmarkId] = useState<string | null>(null);
+  const [didHydrateBookmarks, setDidHydrateBookmarks] = useState(false);
+
+  const quickPrompts = useMemo(
+    () => [
+      {
+        label: "绘制 H5 端登录流程图",
+        value:
+          "请帮我绘制 H5 端登录流程图，要求包含：用户打开登录页、输入账号密码、图形验证码、短信验证码登录、登录成功后的 token 保存、异常提示、忘记密码入口，以及整体采用从上到下的清晰流程布局。",
+      },
+      {
+        label: "绘制电商购物流程图",
+        value:
+          "请帮我绘制电商购物流程图，要求包含：浏览商品、加入购物车、确认订单、选择收货地址、选择支付方式、支付成功、订单发货、用户收货、售后处理，整体用业务流程图形式表达，节点层次清晰且避免连线交叉。",
+      },
+    ],
+    [],
+  );
 
   const selectedAgent = useMemo(
     () => agents.find((agent) => agent.agentId === selectedAgentId) ?? null,
     [agents, selectedAgentId],
+  );
+
+  const activeBookmark = useMemo(
+    () => bookmarks.find((bookmark) => bookmark.id === activeBookmarkId) ?? null,
+    [activeBookmarkId, bookmarks],
   );
 
   const latestUserBubble = useMemo(
@@ -336,11 +413,119 @@ export default function ChatClient({
     [bubbles],
   );
 
+  const bookmarkStorageKey = useMemo(
+    () => createBookmarkStorageKey(userId),
+    [userId],
+  );
+
   useEffect(() => {
     const node = chatRef.current;
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [bubbles]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const raw = window.localStorage.getItem(bookmarkStorageKey);
+    const parsed = raw ? safeParseJson<ChatBookmarkStore>(raw) : null;
+    if (!parsed || parsed.version !== BOOKMARK_STORE_VERSION) {
+      setDidHydrateBookmarks(true);
+      return;
+    }
+
+    const nextBookmarks = Array.isArray(parsed.bookmarks) ? parsed.bookmarks : [];
+    setBookmarks(nextBookmarks);
+    setActiveBookmarkId(parsed.activeBookmarkId ?? null);
+
+    const bookmarkToRestore =
+      nextBookmarks.find((bookmark) => bookmark.id === parsed.activeBookmarkId) ??
+      nextBookmarks[0] ??
+      null;
+
+    if (bookmarkToRestore) {
+      restoreConversationStateFromBookmark(
+        bookmarkToRestore,
+        setSelectedAgentId,
+        setSessionId,
+        setBubbles,
+        setDiagramXml,
+        setInputPlaceholder,
+        setStatus,
+        setStatusType,
+        setMessage,
+      );
+      setActiveBookmarkId(bookmarkToRestore.id);
+    }
+
+    setDidHydrateBookmarks(true);
+  }, [bookmarkStorageKey]);
+
+  useEffect(() => {
+    if (!didHydrateBookmarks || typeof window === "undefined") return;
+
+    const store: ChatBookmarkStore = {
+      version: BOOKMARK_STORE_VERSION,
+      activeBookmarkId,
+      bookmarks,
+    };
+    window.localStorage.setItem(bookmarkStorageKey, JSON.stringify(store));
+  }, [activeBookmarkId, bookmarkStorageKey, bookmarks, didHydrateBookmarks]);
+
+  useEffect(() => {
+    if (!activeBookmarkId) return;
+
+    setBookmarks((current) => {
+      const matched = current.find((bookmark) => bookmark.id === activeBookmarkId);
+      if (!matched) return current;
+
+      const nextTitle = buildBookmarkTitle(
+        bubbles.find((bubble) => bubble.side === "user")?.text || matched.title || "",
+      );
+      const selectedAgentLabel = selectedAgent
+        ? `${selectedAgent.agentName || selectedAgent.agentId}${
+            selectedAgent.agentDesc ? ` - ${selectedAgent.agentDesc}` : ""
+          }`
+        : matched.selectedAgentLabel || "-";
+      const hasChanged =
+        matched.title !== nextTitle ||
+        matched.selectedAgentId !== selectedAgentId ||
+        matched.selectedAgentLabel !== selectedAgentLabel ||
+        matched.sessionId !== sessionId ||
+        matched.diagramXml !== diagramXml ||
+        matched.inputPlaceholder !== inputPlaceholder ||
+        JSON.stringify(matched.bubbles) !== JSON.stringify(bubbles);
+
+      if (!hasChanged) {
+        return current;
+      }
+
+      const updatedBookmark: ChatBookmark = {
+        ...matched,
+        title: nextTitle,
+        updatedAt: Date.now(),
+        selectedAgentId,
+        selectedAgentLabel,
+        sessionId,
+        bubbles,
+        diagramXml,
+        inputPlaceholder,
+      };
+
+      return [
+        updatedBookmark,
+        ...current.filter((bookmark) => bookmark.id !== activeBookmarkId),
+      ];
+    });
+  }, [
+    activeBookmarkId,
+    bubbles,
+    diagramXml,
+    inputPlaceholder,
+    selectedAgent,
+    selectedAgentId,
+    sessionId,
+  ]);
 
   function setStatusMessage(
     nextStatus: string,
@@ -348,6 +533,102 @@ export default function ChatClient({
   ) {
     setStatus(nextStatus);
     setStatusType(type);
+  }
+
+  function resetConversationState(keepAgentId = true) {
+    setSessionId("");
+    setMessage("");
+    setBubbles([]);
+    setDiagramXml(null);
+    setInputPlaceholder(DEFAULT_INPUT_PLACEHOLDER);
+    setStatusMessage(
+      initialBackendIssue ? `智能体列表加载失败：${initialBackendIssue}` : "已加载智能体列表。",
+      initialBackendIssue ? "error" : "info",
+    );
+    if (!keepAgentId) {
+      setSelectedAgentId(agents[0]?.agentId ?? "");
+    }
+  }
+
+  function createBookmarkFromCurrentConversation(firstUserMessage: string) {
+    const selectedAgentLabel = selectedAgent
+      ? `${selectedAgent.agentName || selectedAgent.agentId}${
+          selectedAgent.agentDesc ? ` - ${selectedAgent.agentDesc}` : ""
+        }`
+      : "-";
+
+    const bookmarkId = `bookmark-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const now = Date.now();
+    const bookmark: ChatBookmark = {
+      id: bookmarkId,
+      title: buildBookmarkTitle(firstUserMessage),
+      createdAt: now,
+      updatedAt: now,
+      userId,
+      selectedAgentId,
+      selectedAgentLabel,
+      sessionId: "",
+      bubbles: [],
+      diagramXml: null,
+      inputPlaceholder: DEFAULT_INPUT_PLACEHOLDER,
+    };
+
+    setBookmarks((current) => [bookmark, ...current]);
+    setActiveBookmarkId(bookmarkId);
+    return bookmarkId;
+  }
+
+  function handleNewConversation() {
+    setActiveBookmarkId(null);
+    resetConversationState(true);
+    setStatusMessage("已创建新的空白对话。");
+    textareaRef.current?.focus();
+  }
+
+  function handleSelectBookmark(bookmark: ChatBookmark) {
+    setActiveBookmarkId(bookmark.id);
+    restoreConversationStateFromBookmark(
+      bookmark,
+      setSelectedAgentId,
+      setSessionId,
+      setBubbles,
+      setDiagramXml,
+      setInputPlaceholder,
+      setStatus,
+      setStatusType,
+      setMessage,
+    );
+  }
+
+  function handleDeleteBookmark(bookmarkId: string) {
+    setBookmarks((current) => current.filter((bookmark) => bookmark.id !== bookmarkId));
+
+    if (bookmarkId !== activeBookmarkId) {
+      return;
+    }
+
+    const remainingBookmarks = bookmarks.filter((bookmark) => bookmark.id !== bookmarkId);
+    const nextBookmark = remainingBookmarks[0] ?? null;
+
+    if (nextBookmark) {
+      setActiveBookmarkId(nextBookmark.id);
+      restoreConversationStateFromBookmark(
+        nextBookmark,
+        setSelectedAgentId,
+        setSessionId,
+        setBubbles,
+        setDiagramXml,
+        setInputPlaceholder,
+        setStatus,
+        setStatusType,
+        setMessage,
+      );
+      return;
+    }
+
+    setActiveBookmarkId(null);
+    resetConversationState(true);
+    setStatusMessage("已删除当前书签。");
   }
 
   async function loadAgents() {
@@ -394,6 +675,14 @@ export default function ChatClient({
     }
     if (!trimmedMessage) return;
 
+    const nextBookmarkId =
+      activeBookmarkId ??
+      (bubbles.length === 0 ? createBookmarkFromCurrentConversation(trimmedMessage) : null);
+
+    if (!activeBookmarkId && nextBookmarkId) {
+      setActiveBookmarkId(nextBookmarkId);
+    }
+
     const userBubble = createBubble("user", trimmedMessage, `userId=${userId}`);
     const agentBubble = createBubble("agent", "思考中…", `agentId=${selectedAgentId}`);
     setBubbles((current) => [...current, userBubble, agentBubble]);
@@ -401,10 +690,12 @@ export default function ChatClient({
     setSending(true);
 
     try {
-      const nextSessionId = await createAgentSession({
-        agentId: selectedAgentId,
-        userId,
-      });
+      const nextSessionId =
+        sessionId ||
+        (await createAgentSession({
+          agentId: selectedAgentId,
+          userId,
+        }));
       setSessionId(nextSessionId);
       updateBubble(
         agentBubble.id,
@@ -418,22 +709,37 @@ export default function ChatClient({
         sessionId: nextSessionId,
         message: trimmedMessage,
       });
-      const parsedReply = await parseAgentReply(rawReply);
+      const parsedReply = await normalizeChatResult(rawReply);
 
-      if (parsedReply.diagramXml) {
-        setDiagramXml(parsedReply.diagramXml);
+      if (parsedReply.drawio) {
+        setDiagramXml(parsedReply.drawio);
       }
+
+      const assistantText =
+        parsedReply.user ||
+        (parsedReply.drawio
+          ? "图表已生成并同步到 draw.io 面板。"
+          : "(空响应)");
 
       updateBubble(
         agentBubble.id,
-        parsedReply.chatText,
-        parsedReply.diagramXml
+        assistantText,
+        parsedReply.drawio
           ? `agentId=${selectedAgentId} · sessionId=${nextSessionId} · draw.io 已更新`
           : `agentId=${selectedAgentId} · sessionId=${nextSessionId}`,
       );
+      setInputPlaceholder(
+        parsedReply.user && !parsedReply.drawio
+          ? buildInputPlaceholder(parsedReply.user)
+          : DEFAULT_INPUT_PLACEHOLDER,
+      );
       setBackendIssue(null);
       setStatusMessage(
-        parsedReply.diagramXml ? "已完成，draw.io 图表已同步更新。" : "已完成。",
+        parsedReply.user && !parsedReply.drawio
+          ? "智能体需要你补充信息后再继续。"
+          : parsedReply.drawio
+            ? "已完成，draw.io 图表已同步更新。"
+            : "已完成。",
       );
     } catch (error) {
       const messageText = error instanceof Error ? error.message : "请求失败";
@@ -456,6 +762,12 @@ export default function ChatClient({
     startTransition(() => {
       router.replace("/login");
     });
+  }
+
+  function handleQuickPromptClick(value: string) {
+    setMessage(value);
+    setInputPlaceholder(DEFAULT_INPUT_PLACEHOLDER);
+    textareaRef.current?.focus();
   }
 
   return (
@@ -518,7 +830,75 @@ export default function ChatClient({
       </header>
 
       <main className="flex min-h-0 flex-1 overflow-hidden px-2 py-3 md:px-3 md:py-4">
-        <div className="grid h-full min-h-0 w-full min-w-0 gap-3 md:gap-4 lg:grid-cols-[3fr_1fr]">
+        <div className="grid h-full min-h-0 w-full min-w-0 gap-3 md:gap-4 lg:grid-cols-[270px_3fr_1fr]">
+          <aside className="glass-panel hidden min-h-0 min-w-0 overflow-hidden rounded-[34px] lg:flex lg:flex-col">
+            <div className="relative z-10 flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-[#5d7fad]">
+                  Bookmarks
+                </p>
+                <h2 className="mt-1 text-sm font-semibold text-[#1f3657]">
+                  对话书签
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={handleNewConversation}
+                className="hover-lift fluent-secondary rounded-[18px] px-3 py-2 text-xs font-semibold"
+              >
+                新建
+              </button>
+            </div>
+
+            <div className="scrollbar-subtle relative z-10 flex-1 overflow-auto px-3 py-3">
+              {bookmarks.length === 0 ? (
+                <div className="surface-panel rounded-[24px] border border-white/82 px-4 py-4">
+                  <p className="text-xs leading-6 text-[var(--muted-soft)]">
+                    新的对话在首次发送后会自动生成书签，并把消息、智能体、Session 和 draw.io 图表一起保存到浏览器本地。
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {bookmarks.map((bookmark) => (
+                    <div
+                      key={bookmark.id}
+                      className={`surface-panel rounded-[24px] border px-3 py-3 transition ${
+                        bookmark.id === activeBookmarkId
+                          ? "border-[#bcd5ff] bg-[linear-gradient(180deg,rgba(237,245,255,0.96),rgba(227,239,255,0.86))]"
+                          : "border-white/82 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(246,249,255,0.78))]"
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectBookmark(bookmark)}
+                          className="min-w-0 flex-1 text-left"
+                        >
+                          <div className="truncate text-sm font-semibold text-[#1f3657]">
+                            {bookmark.title}
+                          </div>
+                          <div className="mt-1 truncate text-[11px] text-[#6b82a0]">
+                            {bookmark.selectedAgentLabel || "未选择智能体"}
+                          </div>
+                          <div className="mt-2 text-[11px] text-[var(--muted-soft)]">
+                            {formatTime(bookmark.updatedAt)}
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteBookmark(bookmark.id)}
+                          className="rounded-[14px] border border-white/84 bg-white/72 px-2.5 py-1.5 text-[11px] font-semibold text-[#6a7f9b]"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </aside>
+
           <AgentDrawIoPanel
             userId={userId}
             sessionId={sessionId}
@@ -543,13 +923,13 @@ export default function ChatClient({
                     智能体控制中枢
                   </h1>
                   <p className="mt-1 text-sm text-[var(--muted-soft)]">
-                    登录后先创建 SessionID，再发起对话，并同步渲染到 draw.io 面板
+                    当前书签会同步保存对话内容、智能体信息、Session 和 draw.io 图表
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {[
                     selectedAgent ? selectedAgent.agentName || selectedAgent.agentId : "未选择智能体",
-                    sessionId ? "Session Active" : "Waiting",
+                    activeBookmark ? activeBookmark.title : "未保存对话",
                   ].map((item) => (
                     <span
                       key={item}
@@ -572,8 +952,7 @@ export default function ChatClient({
                     Ready
                   </p>
                   <p className="mt-3 text-sm leading-7 text-[#49617f]">
-                    选择智能体后开始对话。每次发送会先创建 `sessionId`，再调用 `chat`
-                    接口。如果回复中包含 draw.io XML，会优先同步到左侧画布。
+                    选择智能体后开始对话。首次发送会自动生成一个新的对话书签；后续消息、图表与 Session 信息都会绑定到该书签，并保存在浏览器本地。
                   </p>
                 </div>
               ) : null}
@@ -617,28 +996,50 @@ export default function ChatClient({
 
             <form
               onSubmit={handleSubmit}
-              className="flex items-end gap-3 border-t border-[var(--line)] bg-[rgba(247,250,255,0.48)] p-4"
+              className="border-t border-[var(--line)] bg-[rgba(247,250,255,0.48)] p-4"
             >
-              <textarea
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    event.currentTarget.form?.requestSubmit();
-                  }
-                }}
-                disabled={sending}
-                placeholder="请输入问题，回车发送（Shift+Enter 换行）"
-                className="ring-focus fluent-field min-h-[54px] max-h-[180px] flex-1 resize-none rounded-[22px] px-4 py-3 text-sm leading-7 disabled:cursor-not-allowed disabled:opacity-70"
-              />
-              <button
-                type="submit"
-                disabled={sending}
-                className="hover-lift fluent-primary cursor-pointer rounded-[22px] px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {sending ? "发送中…" : "发送"}
-              </button>
+              {bubbles.length === 0 ? (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {quickPrompts.map((prompt) => (
+                    <button
+                      key={prompt.label}
+                      type="button"
+                      onClick={() => handleQuickPromptClick(prompt.value)}
+                      className="hover-lift rounded-full border border-white/86 bg-white/76 px-3 py-2 text-xs font-medium text-[#4a6f9f] shadow-[inset_0_1px_0_rgba(255,255,255,0.96)]"
+                    >
+                      {prompt.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="flex items-end gap-3">
+                <textarea
+                  ref={textareaRef}
+                  value={message}
+                  onChange={(event) => setMessage(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Enter" &&
+                      (event.ctrlKey || event.metaKey) &&
+                      !event.shiftKey
+                    ) {
+                      event.preventDefault();
+                      event.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                  disabled={sending}
+                  placeholder={inputPlaceholder}
+                  className="ring-focus fluent-field min-h-[88px] max-h-[220px] flex-1 resize-none rounded-[22px] px-4 py-3 text-sm leading-7 disabled:cursor-not-allowed disabled:opacity-70"
+                />
+                <button
+                  type="submit"
+                  disabled={sending}
+                  className="hover-lift fluent-primary cursor-pointer rounded-[22px] px-5 py-3 font-semibold disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {sending ? "发送中…" : "发送"}
+                </button>
+              </div>
             </form>
           </section>
         </div>

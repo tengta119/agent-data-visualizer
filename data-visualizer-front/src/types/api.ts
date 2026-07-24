@@ -28,8 +28,23 @@ export type ChatRequest = {
   message: string;
 };
 
+export type StructuredAgentReply = {
+  user?: string;
+  drawio?: string;
+  type?: "user" | "drawio";
+  content?: string;
+};
+
 export type ChatData = {
-  content: string;
+  content?: string | StructuredAgentReply;
+  user?: string;
+  drawio?: string;
+  type?: "user" | "drawio";
+};
+
+export type ChatResult = {
+  user: string;
+  drawio: string | null;
 };
 
 export type LoginPayload = {

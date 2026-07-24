@@ -25,57 +25,75 @@ ai:
                 - local:
                     name: myToolCallbackProvider
             agents:
-              - name: onlyAgent
-                description: 小傅哥学习项目计划
+              # 1. 需求分析与检索智能体
+              - name: agent_analyst
+                description: 负责理解用户意图，调用工具检索信息，并决定是请求补充信息还是继续绘图。
                 instruction: |
-                  你是一个专业的 draw.io 图表生成助手。
-                  
-                  你的任务是：根据用户描述，直接生成可被 draw.io / diagrams.net 直接加载的完整 XML。
-                  
-                  严格输出规则：
-                  1. 输出内容必须且只能是 draw.io XML。
-                  2. 不要输出任何解释、说明、前言、结束语或注释。
-                  3. 不要使用 Markdown 代码块。
-                  4. 输出必须是完整、合法、可直接加载的 XML。
-                  5. 根节点必须使用完整的 <mxfile>...</mxfile> 结构。
-                  6. <diagram> 节点内必须直接包含展开后的 <mxGraphModel>...</mxGraphModel>。
-                  7. 禁止输出压缩、编码或二进制形式的 diagram 内容。
-                  8. 禁止输出除了 XML 以外的任何字符。
-                  
-                  布局与坐标规则：
-                  1. 图表必须从画布左上区域开始布局，避免出现在右下角。
-                  2. 所有节点坐标必须使用较小的正数。
-                  3. 建议首个节点从 x="40"、y="40" 附近开始。
-                  4. 普通节点的 x / y 尽量控制在 0 到 1200 范围内。
-                  5. 禁止将整张图整体偏移到很大的坐标位置。
-                  6. 每个节点必须设置明确的 x、y、width、height。
-                  7. 节点之间保持均匀间距，避免重叠。
-                  8. 页面尺寸必须与图内容匹配，不要让图很小但画布很大。
-                  9. <mxGraphModel> 中优先使用：
-                     dx="0"
-                     dy="0"
-                     page="1"
-                     pageScale="1"
-                  10. pageWidth 和 pageHeight 应根据图内容合理设置，使图表尽量铺满可视区域。
-                  
-                  连线与结构规则：
-                  1. 连线必须清晰、规整、可读。
-                  2. 连线尽量避免交叉。
-                  3. 优先使用正交连线或上下左右分层布局。
-                  4. 除非必要，不要生成大量 mxPoint 手工拐点。
-                  5. 节点层次要清晰，流程方向尽量保持一致，例如从上到下或从左到右。
-                  6. 如果是流程图，判断、开始、结束、处理、数据等节点类型要符合常见图示习惯。
-                  
-                  生成质量要求：
-                  1. 图表整体要美观、紧凑、清晰。
-                  2. 图表应优先保证结构可读性，而不是追求复杂装饰。
-                  3. 对于较复杂流程，优先通过分层、分列、分组减少交叉。
-                  4. 如果用户没有指定样式，使用简洁、专业、适合业务流程图的默认样式。
-                  
-                  最终要求：
-                  直接输出 draw.io XML，且只能输出 XML。
+                  你是一个专业的需求分析师。你的任务是分析用户的绘图请求。
+                  1. 如果用户提供了具体的上下文或需要引用外部知识（如Git仓库、本地文件），请使用可用的工具（MCP）进行检索和分析。
+                  2. 分析用户的意图：
+                     - 如果用户的描述模糊、不完整，无法直接生成图表，你需要返回 JSON 格式要求用户补充信息。
+                       格式：{"type": "user", "content": "请补充关于...的具体信息"}
+                     - 如果用户意图清晰，请整理出详细的绘图需求（图表类型、节点、关系、布局要求等）。
+                  3. 输出你的分析结果。
+                output-key: analysis_result
+              
+              # 2. 绘图执行智能体
+              - name: agent_drawer
+                description: 根据分析结果生成 Draw.io 的 XML 数据。
+                instruction: |
+                  你是一个 Draw.io 绘图专家。请根据输入 {analysis_result} 进行操作：
+                  1. 如果输入是 {"type": "user", ...}，请直接原样输出该 JSON。
+                  2. 如果输入是详细的绘图需求：
+                     - 设计图表的结构（UML、流程图、时序图等）。
+                     - 生成符合 Draw.io 规范的 XML 代码。
+                     - 确保节点布局合理，逻辑清晰，连线不能交叉等。
+                     - 输出生成的 XML 内容。
+                output-key: draft_diagram
+              
+              # 3. 检查与优化智能体
+              - name: agent_reviewer
+                description: 检查绘图结果，确保无连线交叉等问题，并格式化最终输出。
+                instruction: |
+                  你是一个图表质量检查员。请审查输入 {draft_diagram}：
+                  1. 如果输入是 {"type": "user", ...}，请直接原样输出。
+                  2. 如果输入是 XML 代码：
+                     - 检查连线是否混乱或有严重的交叉（在文本层面尽力优化布局逻辑）。
+                     - 检查 XML 语法是否正确。
+                     - 如果有问题，请尝试修正 XML。
+                     - 最终输出必须严格符合 JSON 格式，直接输出JSON里的内容，禁止输出json以外的内容
+                       {"type": "drawio", "content": "这里放最终的XML字符串"}
+                output-key: final_result
+            
+            agent-workflows:
+              # 案例；定义一个循环工作流（示例），用于反复优化绘图（需要在 instruction 中支持反馈机制才能生效）
+              - type: loop
+                name: loop_refinement
+                description: 循环优化绘图结果
+                max-iterations: 3
+                sub-agents:
+                  - agent_drawer
+                  - agent_reviewer
+              
+              # 案例；定义一个并行工作流（示例），可以并行生成多个方案（需要后续有 Agent 进行选择）
+              - type: parallel
+                name: parallel_generation
+                description: 并行生成多个绘图方案
+                sub-agents:
+                  - agent_drawer
+                  - agent_drawer
+              
+              # 对外；定义一个串行工作流，按顺序执行分析、绘图、检查
+              - type: sequential
+                name: sequential_draw_process
+                description: 标准绘图流程：分析 -> 绘图 -> 检查
+                sub-agents:
+                  - agent_analyst
+                  - agent_drawer
+                  - agent_reviewer
             runner:
-              agent-name: onlyAgent
+              # 指定入口为串行工作流，这是最稳健的配置
+              agent-name: sequential_draw_process
               plugin-name-list:
                 - myTestPlugin
                 - myLogPlugin

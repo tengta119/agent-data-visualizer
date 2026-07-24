@@ -5,8 +5,10 @@ export type {
   ApiResponse,
   ChatData,
   ChatRequest,
+  ChatResult,
   CreateSessionData,
   CreateSessionRequest,
   LoginPayload,
   QueryAgentConfigListData,
+  StructuredAgentReply,
 } from "@/src/types/api";

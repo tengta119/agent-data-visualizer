@@ -1,5 +1,6 @@
 package top.lbwxxc.ai.trigger.http;
 
+import com.alibaba.fastjson.JSON;
 import top.lbwxxc.ai.api.IAgentService;
 import top.lbwxxc.ai.api.dto.*;
 import top.lbwxxc.ai.api.response.Response;
@@ -13,6 +14,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -28,6 +31,7 @@ public class AgentServiceController implements IAgentService {
 
     @Resource
     private IChatService chatService;
+    private static final Pattern JSON_PATTERN = Pattern.compile("```json\\s*(\\{.*?\\})\\s*```", Pattern.DOTALL);
 
     @RequestMapping(value = "query_ai_agent_config_list", method = RequestMethod.GET)
     @Override
@@ -117,8 +121,34 @@ public class AgentServiceController implements IAgentService {
             List<String> messages = chatService.handleMessage(requestDTO.getAgentId(), requestDTO.getUserId(), sessionId, requestDTO.getMessage());
 
             ChatResponseDTO responseDTO = new ChatResponseDTO();
-            responseDTO.setContent(String.join("\n", messages));
 
+            try {
+                String result = messages.stream().reduce((first, second) -> second).orElse("");
+                Matcher matcher = JSON_PATTERN.matcher(result);
+                if (!matcher.find()) {
+                    throw new IllegalArgumentException("未找到 JSON 数据");
+                }
+
+                String json = matcher.group(1);
+                ChatResponseDTO parsed = JSON.parseObject(json, ChatResponseDTO.class);
+
+                if (parsed != null) {
+                    responseDTO = parsed;
+                    if (responseDTO.getType() == null) {
+                        responseDTO.setType("user");
+                    }
+                } else {
+                    responseDTO.setType("user");
+                    responseDTO.setContent(String.join("\n", messages));
+                }
+
+            } catch (Exception e) {
+                responseDTO.setType("user");
+                responseDTO.setContent(String.join("\n", messages));
+                log.info("反序列化出现错误 {}", e.getMessage());
+            }
+
+            log.info("结果返回 {}", responseDTO);
             return Response.<ChatResponseDTO>builder()
                     .code(ResponseCode.SUCCESS.getCode())
                     .info(ResponseCode.SUCCESS.getInfo())
