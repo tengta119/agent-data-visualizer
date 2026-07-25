@@ -39,6 +39,11 @@
             <groupId>top.lbwxxc.ai</groupId>
             <artifactId>data-visualizer-types</artifactId>
         </dependency>
+        <!-- https://github.com/spring-ai-community/spring-ai-agent-utils -->
+        <dependency>
+            <groupId>org.springaicommunity</groupId>
+            <artifactId>spring-ai-agent-utils</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

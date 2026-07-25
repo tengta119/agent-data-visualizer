@@ -75,7 +75,10 @@ public class AiAgentConfigTableVO {
         public static class ChatModel {
 
             private String model;
+
             private List<ToolMcp> toolMcpList;
+
+            private List<ToolSkills> toolSkillsList;
 
             @Data
             public static class ToolMcp {
@@ -116,6 +119,22 @@ public class AiAgentConfigTableVO {
                 }
 
             }
+
+            @Data
+            public static class ToolSkills {
+
+                /**
+                 * 类型；directory（用户配置的，映射进来的）、resource（放到工程下的）
+                 */
+                private String type = "directory";
+
+                /**
+                 * 路径；
+                 */
+                private String path;
+
+            }
+
         }
 
         @Data

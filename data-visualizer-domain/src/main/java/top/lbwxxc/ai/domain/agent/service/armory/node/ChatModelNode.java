@@ -15,6 +15,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.skills.ToolSkillsCreateService;
 
 import javax.annotation.Resource;
 import java.util.ArrayList;
@@ -30,6 +31,10 @@ public class ChatModelNode extends AbstractArmorySupport {
     @Resource
     private DefaultMcpClientFactory defaultMcpClientFactory;
 
+    @Resource
+    private ToolSkillsCreateService toolSkillsCreateService;
+
+
     @Override
     protected AiAgentRegisterVO doApply(ArmoryCommandEntity requestParameter, DefaultArmoryFactory.DynamicContext dynamicContext) throws Exception {
         log.info("Ai Agent 装配操作 - ChatModelNode");
@@ -41,6 +46,7 @@ public class ChatModelNode extends AbstractArmorySupport {
         AiAgentConfigTableVO aiAgentConfigTableVO = requestParameter.getAiAgentConfigTableVO();
         AiAgentConfigTableVO.Module.ChatModel chatModelConfig = aiAgentConfigTableVO.getModule().getChatModel();
         List<AiAgentConfigTableVO.Module.ChatModel.ToolMcp> toolMcpList = chatModelConfig.getToolMcpList();
+        List<AiAgentConfigTableVO.Module.ChatModel.ToolSkills> toolSkillsList = chatModelConfig.getToolSkillsList();
 
         // 构建mcp服务（工厂）
         List<ToolCallback> toolCallbackList = new ArrayList<>();
@@ -48,6 +54,14 @@ public class ChatModelNode extends AbstractArmorySupport {
             TooMcpCreateService tooMcpCreateService = defaultMcpClientFactory.getTooMcpCreateService(toolMcp);
             ToolCallback[] toolCallbacks = tooMcpCreateService.buildToolCallback(toolMcp);
             toolCallbackList.addAll(List.of(toolCallbacks));
+        }
+
+        // 构建skills服务
+        if (null != toolSkillsList && !toolSkillsList.isEmpty()) {
+            for (AiAgentConfigTableVO.Module.ChatModel.ToolSkills toolSkills : toolSkillsList) {
+                ToolCallback[] toolCallbacks = toolSkillsCreateService.buildToolCallback(toolSkills);
+                toolCallbackList.addAll(List.of(toolCallbacks));
+            }
         }
 
         // 构建对话模型
