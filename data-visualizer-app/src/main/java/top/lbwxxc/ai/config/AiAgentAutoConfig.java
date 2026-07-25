@@ -49,13 +49,12 @@ public class AiAgentAutoConfig implements ApplicationListener<ApplicationReadyEv
 
             if (rawYaml == null) {
                 log.info("使用默认配置装配 Agent");
-                armoryService.acceptArmoryAgents(new ArrayList<>(aiAgentAutoConfigProperties.getTables().values()));
+                armoryService.acceptArmoryAgents(aiAgentAutoConfigProperties);
             } else {
                 log.info("使用本地配置装配");
                 AiAgentAutoConfigProperties currentAiAgentAutoConfigProperties = parseYaml(rawYaml);
-                armoryService.acceptArmoryAgents(new ArrayList<>(currentAiAgentAutoConfigProperties.getTables().values()));
+                armoryService.acceptArmoryAgents(currentAiAgentAutoConfigProperties);
             }
-
 
         } catch (Exception e) {
             throw new RuntimeException(e);

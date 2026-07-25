@@ -1,6 +1,7 @@
 package top.lbwxxc.ai.domain.agent.service;
 
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
+import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
 
 import java.util.List;
 
@@ -12,6 +13,8 @@ import java.util.List;
  */
 public interface IArmoryService {
 
-    void acceptArmoryAgents(List<AiAgentConfigTableVO> tables) throws Exception;
+    void acceptArmoryAgents(AiAgentAutoConfigProperties aiAgentAutoConfigProperties) throws Exception;
+
+    AiAgentAutoConfigProperties queryCurrentAiAgentConfigTableVO();
 
 }
