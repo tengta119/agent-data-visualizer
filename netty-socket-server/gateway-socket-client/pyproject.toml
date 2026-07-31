@@ -1,0 +1,17 @@
+[project]
+name = "gateway-socket-client"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "lbwxxc", email = "1192299468@qq.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+gateway-socket-client = "gateway_socket_client:main"
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"

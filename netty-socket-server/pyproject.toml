@@ -1,0 +1,22 @@
+[project]
+name = "netty-socket-server"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "lbwxxc", email = "1192299468@qq.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+netty-socket-server = "netty_socket_server:main"
+
+[build-system]
+requires = ["uv_build>=0.12.0,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.workspace]
+members = [
+    "gateway-socket-client",
+]

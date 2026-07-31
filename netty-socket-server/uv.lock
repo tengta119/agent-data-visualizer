@@ -1,0 +1,19 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[manifest]
+members = [
+    "gateway-socket-client",
+    "netty-socket-server",
+]
+
+[[package]]
+name = "gateway-socket-client"
+version = "0.1.0"
+source = { editable = "gateway-socket-client" }
+
+[[package]]
+name = "netty-socket-server"
+version = "0.1.0"
+source = { editable = "." }
