@@ -2,6 +2,7 @@ package top.lbwxxc.ai.types.exception;
 
 import lombok.Data;
 import lombok.EqualsAndHashCode;
+import top.lbwxxc.ai.types.enums.ResponseCode;
 
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -14,6 +15,10 @@ public class AppException extends RuntimeException {
 
     /** 异常信息 */
     private String info;
+
+    public AppException(ResponseCode code) {
+        this.code = code.getCode();
+    }
 
     public AppException(String code) {
         this.code = code;

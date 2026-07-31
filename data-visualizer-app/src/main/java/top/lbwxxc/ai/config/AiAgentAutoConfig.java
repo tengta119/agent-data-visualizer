@@ -62,7 +62,7 @@ public class AiAgentAutoConfig implements ApplicationListener<ApplicationReadyEv
     }
 
     private String readCurrentRawYaml() throws IOException {
-        Path configPath = Paths.get("config", "only-one-agent.yml").toAbsolutePath().normalize();
+        Path configPath = Paths.get("config", "data-visualizer-agent.yml").toAbsolutePath().normalize();
         if (!Files.exists(configPath)) {
             return null;
         }

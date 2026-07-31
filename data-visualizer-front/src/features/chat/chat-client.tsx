@@ -1,6 +1,14 @@
 "use client";
 
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import {
+  startTransition,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import AgentDrawIoPanel from "@/src/components/agent-drawio-panel";
 import {
@@ -88,14 +96,6 @@ function buildBookmarkTitle(text: string) {
 
 function createBookmarkStorageKey(userId: string) {
   return `ai_agent_chat_bookmarks:${userId}`;
-}
-
-function createEmptyStore(): ChatBookmarkStore {
-  return {
-    version: BOOKMARK_STORE_VERSION,
-    activeBookmarkId: null,
-    bookmarks: [],
-  };
 }
 
 function safeParseJson<T>(text: string) {
@@ -418,13 +418,7 @@ export default function ChatClient({
     [userId],
   );
 
-  useEffect(() => {
-    const node = chatRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [bubbles]);
-
-  useEffect(() => {
+  const hydrateBookmarks = useEffectEvent(() => {
     if (typeof window === "undefined") return;
 
     const raw = window.localStorage.getItem(bookmarkStorageKey);
@@ -459,22 +453,9 @@ export default function ChatClient({
     }
 
     setDidHydrateBookmarks(true);
-  }, [bookmarkStorageKey]);
+  });
 
-  useEffect(() => {
-    if (!didHydrateBookmarks || typeof window === "undefined") return;
-
-    const store: ChatBookmarkStore = {
-      version: BOOKMARK_STORE_VERSION,
-      activeBookmarkId,
-      bookmarks,
-    };
-    window.localStorage.setItem(bookmarkStorageKey, JSON.stringify(store));
-  }, [activeBookmarkId, bookmarkStorageKey, bookmarks, didHydrateBookmarks]);
-
-  useEffect(() => {
-    if (!activeBookmarkId) return;
-
+  const syncActiveBookmark = useEffectEvent(() => {
     setBookmarks((current) => {
       const matched = current.find((bookmark) => bookmark.id === activeBookmarkId);
       if (!matched) return current;
@@ -517,6 +498,53 @@ export default function ChatClient({
         ...current.filter((bookmark) => bookmark.id !== activeBookmarkId),
       ];
     });
+  });
+
+  useEffect(() => {
+    const node = chatRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [bubbles]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        hydrateBookmarks();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookmarkStorageKey]);
+
+  useEffect(() => {
+    if (!didHydrateBookmarks || typeof window === "undefined") return;
+
+    const store: ChatBookmarkStore = {
+      version: BOOKMARK_STORE_VERSION,
+      activeBookmarkId,
+      bookmarks,
+    };
+    window.localStorage.setItem(bookmarkStorageKey, JSON.stringify(store));
+  }, [activeBookmarkId, bookmarkStorageKey, bookmarks, didHydrateBookmarks]);
+
+  useEffect(() => {
+    if (!activeBookmarkId) return;
+
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      if (!cancelled) {
+        syncActiveBookmark();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [
     activeBookmarkId,
     bubbles,
@@ -817,6 +845,13 @@ export default function ChatClient({
                 {loginTs ? `登录于 ${formatTime(loginTs)}` : "已登录"}
               </span>
             </div>
+
+            <Link
+              href="/agent-config"
+              className="hover-lift fluent-secondary flex h-[56px] items-center justify-center rounded-[18px] px-5 text-sm font-semibold"
+            >
+              Agent 配置
+            </Link>
 
             <button
               type="button"

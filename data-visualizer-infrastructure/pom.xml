@@ -25,6 +25,15 @@
             <groupId>top.lbwxxc.ai</groupId>
             <artifactId>data-visualizer-domain</artifactId>
         </dependency>
+        <!-- 引入 netty 做 socket 通信处理 -->
+        <dependency>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

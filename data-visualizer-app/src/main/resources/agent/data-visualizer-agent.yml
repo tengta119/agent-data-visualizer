@@ -23,7 +23,7 @@ ai:
                     sse-endpoint: sse?api_key=${bec.key}
                     request-timeout: 500000
                 - local:
-                    name: myToolCallbackProvider
+                    name: ShellExecutorToolCallbackProvider
             agents:
               # 1. 需求分析与检索智能体
               - name: agent_analyst
@@ -32,7 +32,7 @@ ai:
                   你是一个专业的需求分析师。你的任务是分析用户的绘图请求。
                   1. 如果用户提供了具体的上下文或需要引用外部知识（如Git仓库、本地文件），请使用可用的工具（MCP）进行检索和分析。
                   2. 分析用户的意图：
-                     - 如果用户的描述模糊、不完整，无法直接生成图表，你需要返回 JSON 格式要求用户补充信息。
+                     - 如果用户的描述模糊、不完整，你需要返回 JSON 格式要求用户补充信息。
                        格式：{"type": "user", "content": "请补充关于...的具体信息"}
                      - 如果用户意图清晰，请整理出详细的绘图需求（图表类型、节点、关系、布局要求等）。
                   3. 输出你的分析结果。

@@ -1,6 +1,6 @@
 package top.lbwxxc.ai;
 
-import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.MyTestMcpService;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.ShellExecutor ;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Configurable;
@@ -16,9 +16,9 @@ public class Application {
         SpringApplication.run(Application.class);
     }
 
-    @Bean("myToolCallbackProvider")
-    public ToolCallbackProvider testTools(MyTestMcpService testService) {
-        return MethodToolCallbackProvider.builder().toolObjects(testService).build();
+    @Bean("ShellExecutorToolCallbackProvider")
+    public ToolCallbackProvider testTools(ShellExecutor shellExecutor) {
+        return MethodToolCallbackProvider.builder().toolObjects(shellExecutor).build();
     }
 
 }

@@ -4,6 +4,15 @@ export type ApiResponse<T> = {
   data?: T;
 };
 
+export type JsonPrimitive = string | number | boolean | null;
+
+export type JsonValue =
+  | JsonPrimitive
+  | {
+      [key: string]: JsonValue;
+    }
+  | JsonValue[];
+
 export type AgentConfig = {
   agentId: string;
   agentName?: string;
@@ -45,6 +54,18 @@ export type ChatData = {
 export type ChatResult = {
   user: string;
   drawio: string | null;
+};
+
+export type AgentConfigTables = Record<string, JsonValue>;
+
+export type CurrentAgentConfigData = {
+  enabled: boolean;
+  tables: AgentConfigTables;
+};
+
+export type UpdateAgentConfigRequest = {
+  enabled: boolean;
+  tables: AgentConfigTables;
 };
 
 export type LoginPayload = {

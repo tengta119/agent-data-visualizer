@@ -1,13 +1,16 @@
 import { AGENT_API_PATHS, buildApiUrl } from "@/src/config/api-config";
 import type {
   ApiResponse,
+  AgentConfigTables,
   ChatData,
   ChatResult,
   ChatRequest,
+  CurrentAgentConfigData,
   CreateSessionData,
   CreateSessionRequest,
   QueryAgentConfigListData,
   StructuredAgentReply,
+  UpdateAgentConfigRequest,
 } from "@/src/types/api";
 
 function safeParseJson(text: string) {
@@ -71,6 +74,44 @@ export async function queryAgentConfigList(options?: RequestInit) {
     options,
   );
   return ensureSuccess(response) ?? [];
+}
+
+function normalizeAgentConfigTables(value: unknown): AgentConfigTables {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  return value as AgentConfigTables;
+}
+
+function normalizeCurrentAgentConfig(
+  data: CurrentAgentConfigData | null | undefined,
+): CurrentAgentConfigData {
+  return {
+    enabled: Boolean(data?.enabled),
+    tables: normalizeAgentConfigTables(data?.tables),
+  };
+}
+
+export async function queryCurrentAgentConfig(options?: RequestInit) {
+  const response = await requestJson<CurrentAgentConfigData>(
+    AGENT_API_PATHS.queryCurrentAgentConfig,
+    options,
+  );
+
+  return normalizeCurrentAgentConfig(ensureSuccess(response));
+}
+
+export async function updateAgentConfig(payload: UpdateAgentConfigRequest) {
+  const response = await requestJson<CurrentAgentConfigData>(
+    AGENT_API_PATHS.updateAgentConfig,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return normalizeCurrentAgentConfig(ensureSuccess(response));
 }
 
 export async function createAgentSession(payload: CreateSessionRequest) {

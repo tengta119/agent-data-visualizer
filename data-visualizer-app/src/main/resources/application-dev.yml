@@ -19,7 +19,7 @@ spring:
       - classpath:application-secret.yml
 #      - classpath:agent/test-agent-02.yml
 #      - classpath:agent/test-agent.yml
-      - classpath:agent/only-one-agent.yml
+      - classpath:agent/data-visualizer-agent.yml
 #      - classpath:agent/parallel_research_app.yml
   datasource:
     username: root
