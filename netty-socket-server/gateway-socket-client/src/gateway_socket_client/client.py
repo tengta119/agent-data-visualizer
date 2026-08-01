@@ -72,7 +72,11 @@ class GatewaySocketClient:
                 continue
 
             command = GatewayCommandEntity.from_json(message)
-            logger.info("Received command %s for ip %s", command.command, command.ip)
+            logger.info(
+                "Received command %s for host %s",
+                command.command,
+                command.host_string,
+            )
             response = self._handle_command(command)
             logger.info("Command %s finished with status %s", command.id, response.status)
 

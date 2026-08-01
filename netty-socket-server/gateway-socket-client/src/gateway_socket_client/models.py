@@ -9,13 +9,13 @@ from typing import Any, Self
 class GatewayCommandEntity:
     id: str
     command: str
-    ip: str
+    host_string: str
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.id,
             "command": self.command,
-            "ip": self.ip,
+            "hostString": self.host_string,
         }
 
     def to_json(self) -> str:
@@ -26,7 +26,7 @@ class GatewayCommandEntity:
         return cls(
             id=str(payload["id"]),
             command=str(payload["command"]),
-            ip=str(payload["ip"]),
+            host_string=str(payload.get("hostString", payload.get("ip", ""))),
         )
 
     @classmethod

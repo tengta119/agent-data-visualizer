@@ -10,23 +10,23 @@ ai:
             agent-desc: 一个测试的智能体
           module:
             ai-api:
-              base-url: https://apis.itedus.cn
-              api-key: sk-2GQTYTNoQSs7qizlE9F00bD84d254c2994D44d6410B0Ac8f
+              base-url: https://api.deepseek.com
+              api-key: ${open-ai.key}
               completions-path: v1/chat/completions
               embeddings-path: v1/embeddings
             chat-model:
-              model: gpt-4.1
+              model: deepseek-v4-flash
               tool-mcp-list:
                 - sse:
                     name: baidu-search
                     base-uri: http://appbuilder.baidu.com/v2/ai_search/mcp/
-                    sse-endpoint: sse?api_key=bce-v3/ALTAK-3zODLb9qHozIftQlGwez5/2696e92781f5bf1ba1870e2958f239fd6dc822a4
-                    request-timeout: 5000
-                - sse:
-                    name: baidu-map
-                    base-uri: https://mcp.map.baidu.com/
-                    sse-endpoint: sse?ak=tV0NsP4Gmj8IL7mhvyjVZ7c6
-                    request-timeout: 5000
+                    sse-endpoint: sse?api_key=${bec.key}
+                    request-timeout: 500000
+                - local:
+                    name: ShellExecutorToolCallbackProvider
+              tool-skills-list:
+                - type: resource
+                  path: agent/skills
             agents:
               - name: CodeWriterAgent
                 description: Writes initial Java code based on a specification.

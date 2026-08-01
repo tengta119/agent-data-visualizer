@@ -25,9 +25,15 @@ public class MCPTest {
         List<String> command = new ArrayList<>();
         command.add("send-command --ip 127.0.0.1 --command \"ls\"");
         command.add("clients");
+        ShellExecutor.CommandRequest request = new ShellExecutor.CommandRequest();
+        request.setCommand("ls");
+        request.setCommandType(ShellExecutor.CommandTypeEnum.remote);
+        request.setHostName("127.0.0.1");
 
         for (int i = 0; i < command.size(); i++) {
-            shellExecutor.execute(new ShellExecutor.CommandRequest(command.get(i)));
+            ShellExecutor.CommandResponse execute = shellExecutor.execute(request);
+
+            log.info("执行结果 {}", execute);
         }
     }
 }

@@ -12,15 +12,19 @@ thread:
         block-queue-size: 5000
         policy: CallerRunsPolicy
 
+gateway:
+  socket:
+    port: 9077
+
 # 数据库配置；启动时配置数据库资源信息
 spring:
   config:
     import:
-      - classpath:application-secret.yml
 #      - classpath:agent/test-agent-02.yml
-#      - classpath:agent/test-agent.yml
-      - classpath:agent/data-visualizer-agent.yml
+      - classpath:agent/test-agent.yml
+#      - classpath:agent/data-visualizer-agent.yml
 #      - classpath:agent/parallel_research_app.yml
+      - classpath:application-secret.yml
   datasource:
     username: root
     password: 123456

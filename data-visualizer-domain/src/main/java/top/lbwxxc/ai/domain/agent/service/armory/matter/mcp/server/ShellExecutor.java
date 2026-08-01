@@ -2,13 +2,14 @@ package top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
-import com.fasterxml.jackson.databind.util.JSONPObject;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import jakarta.annotation.Resource;
+import lombok.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Service;
+import top.lbwxxc.ai.domain.agent.adapter.port.IBusinessPort;
+import top.lbwxxc.ai.domain.agent.model.entity.GatewayCommandEntity;
+import top.lbwxxc.ai.domain.agent.model.valobj.GatewayResponseVO;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -21,6 +22,8 @@ public class ShellExecutor {
     private final Process process;
     private final BufferedWriter writer;
     private final BufferedReader reader;
+    @Resource
+    private IBusinessPort businessPort;
 
     public ShellExecutor() throws IOException {
 
@@ -33,9 +36,51 @@ public class ShellExecutor {
 
     @Tool(description = "调用命令行")
     public CommandResponse execute(CommandRequest commandRequest)  {
-        String commandPre = "python -m uv run --project D:\\python-project\\netty-socket-server netty-socket-server ";
+        CommandResponse response;
+
+        switch (commandRequest.getCommandType()) {
+            case local -> response = executeLocalCommand(commandRequest);
+            case remote ->  response = executeRemoteCommand(commandRequest);
+            default -> throw new RuntimeException("违法类型");
+        }
+
+        return response;
+    }
+
+    private CommandResponse executeRemoteCommand(CommandRequest commandRequest) {
+        String command = commandRequest.command;
+        String hostName = commandRequest.getHostName();
+        GatewayCommandEntity gatewayCommandEntity = GatewayCommandEntity.buildCommand(command, hostName);
+
+        try {
+            GatewayResponseVO responseVO = businessPort.action(gatewayCommandEntity);
+            CommandResponse commandResponse = parse(responseVO.getMessage());
+
+            commandResponse.setResponseStatus(responseVO.getStatus());
+            if (commandResponse.getResponseMessage() == null) {
+                commandResponse.setResponseMessage(responseVO.getMessage());
+            }
+            commandResponse.setTargetIp(hostName);
+
+            return  commandResponse;
+        } catch (Exception e) {
+
+            throw new RuntimeException(e);
+        }
+    }
+
+    private CommandResponse executeLocalCommand(CommandRequest commandRequest) {
+        if (commandRequest.getCommand().equals("clients")) {
+            GatewayResponseVO responseVO = businessPort.queryClients();
+            return CommandResponse.builder()
+                    .command(commandRequest.command)
+                    .responseMessage(responseVO.getMessage())
+                    .responseStatus(responseVO.getStatus())
+                    .build();
+        }
+
         String marker = "__END__";
-        String command = commandPre + commandRequest.command + "\n" + "echo " + marker;
+        String command = commandRequest.command + "\n" + "echo " + marker;
 
         StringBuilder result = new StringBuilder();
         try {
@@ -56,7 +101,11 @@ public class ShellExecutor {
         }
 
         String resultString = result.toString();
-        CommandResponse commandResponse = parse(resultString.substring(resultString.indexOf("targetIp")));
+        CommandResponse commandResponse = new CommandResponse();
+
+        commandResponse.setResponseMessage(resultString);
+        commandResponse.setResponseStatus("success");
+        commandResponse.setTargetIp(commandRequest.getHostName());
 
         return commandResponse;
     }
@@ -66,13 +115,31 @@ public class ShellExecutor {
     @Data
     public static class CommandRequest{
         @JsonProperty(required = true, value = "command")
-        @JsonPropertyDescription("终端的指令如 \"ls\"、\"cd ..\"")
+        @JsonPropertyDescription("终端的指令如 ls、cd ..")
         private String command;
+        @JsonProperty(required = true, value = "commandType")
+        @JsonPropertyDescription("type 为指令的类型, local 只在本机的终端执行命令， remote 指执行远程命令")
+        private CommandTypeEnum commandType;
+        @JsonProperty(required = true, value = "hostName")
+        @JsonPropertyDescription("hostName 为客户端的地址, 当 commandType 为local时，hostName 为空字符串")
+        private String hostName;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    @NoArgsConstructor
+    public static enum CommandTypeEnum {
+
+        local("local"),
+        remote("remote");
+
+        String value;
     }
 
     @AllArgsConstructor
     @NoArgsConstructor
     @Data
+    @Builder
     public static class CommandResponse{
         @JsonProperty(required = true, value = "targetIp")
         @JsonPropertyDescription("执行命令的客户端的ip地址")
