@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import os
 import shlex
+import shutil
 import subprocess
-import uuid
 from pathlib import Path
 
 
@@ -12,20 +12,10 @@ class SafeCommandExecutor:
     def __init__(self, base_dir: str | Path | None = None) -> None:
 
         self.base_dir = Path(base_dir or os.getcwd()).resolve()
-
-        # 启动持久 shell
-        self.process = subprocess.Popen(
-            ["pwsh.exe"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=self.base_dir,
-            bufsize=1
-        )
+        self.shell_command = self._resolve_shell_command()
 
     def execute(self, raw_command: str) -> str:
-        parts = shlex.split(raw_command, posix=False)
+        parts = shlex.split(raw_command, posix=os.name != "nt")
 
         if not parts:
             raise ValueError(
@@ -37,36 +27,16 @@ class SafeCommandExecutor:
 
         self.check_permission(action, args)
 
-        marker = (
-            f"__COMMAND_END_"
-            f"{uuid.uuid4().hex}__"
-        )
-        command = (
-            raw_command
-            + "\n"
-            + f"echo {marker}"
-            + "\n"
+        completed = subprocess.run(
+            self._build_shell_command(raw_command),
+            cwd=self.base_dir,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
         )
 
-        self.process.stdin.write(command)
-        self.process.stdin.flush()
-
-        output = []
-
-        while True:
-            line = (self.process.stdout.readline())
-            if not line:
-                break
-
-            line = line.rstrip("\n")
-            if line == marker:
-                break
-
-            output.append(line)
-
-        return "\n".join(output)
-
-
+        return completed.stdout.rstrip("\n")
 
     def check_permission(self, action: str, args: list[str]):
         blacklist = {
@@ -82,12 +52,53 @@ class SafeCommandExecutor:
                 f"Command {action} is forbidden"
             )
 
-    def close(self):
-        if self.process:
-            self.process.stdin.write(
-                "exit\n"
+    @staticmethod
+    def _resolve_shell_command() -> list[str]:
+        if os.name == "nt":
+            candidates = (
+                os.getenv("GATEWAY_CLIENT_SHELL"),
+                "pwsh.exe",
+                "pwsh",
+                "powershell.exe",
             )
-            self.process.stdin.flush()
-            self.process.wait()
+        else:
+            candidates = (
+                os.getenv("GATEWAY_CLIENT_SHELL"),
+                os.getenv("SHELL"),
+                "fish",
+                "bash",
+                "sh",
+            )
 
+        for candidate in candidates:
+            if not candidate:
+                continue
 
+            command = shlex.split(candidate, posix=os.name != "nt")
+            executable = shutil.which(command[0])
+            if executable:
+                return [executable, *command[1:]]
+
+        raise FileNotFoundError(
+            "No supported shell found. Set GATEWAY_CLIENT_SHELL to a valid shell path."
+        )
+
+    def _build_shell_command(self, raw_command: str) -> list[str]:
+        shell_name = Path(self.shell_command[0]).name.lower()
+        if os.name == "nt" or "pwsh" in shell_name or "powershell" in shell_name:
+            return [
+                *self.shell_command,
+                "-NoLogo",
+                "-NoProfile",
+                "-Command",
+                raw_command,
+            ]
+
+        return [
+            *self.shell_command,
+            "-c",
+            raw_command,
+        ]
+
+    def close(self):
+        return None

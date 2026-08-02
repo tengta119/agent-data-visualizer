@@ -20,6 +20,10 @@ Supported commands:
 
 Example:
 
-```powershell
-python -m uv run gateway-socket-client --server-host 127.0.0.1 --server-port 9000
+```bash
+uv run gateway-socket-client --server-host 127.0.0.1 --server-port 9000
 ```
+
+On Linux and macOS, the client uses `$GATEWAY_CLIENT_SHELL`, `$SHELL`, `fish`,
+`bash`, then `sh` to choose the local command shell. On Windows, it prefers
+PowerShell.
