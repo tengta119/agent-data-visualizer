@@ -21,8 +21,8 @@ spring:
   config:
     import:
 #      - classpath:agent/test-agent-02.yml
-      - classpath:agent/test-agent.yml
-#      - classpath:agent/data-visualizer-agent.yml
+#      - classpath:agent/test-agent.yml
+      - classpath:agent/data-visualizer-agent.yml
 #      - classpath:agent/parallel_research_app.yml
       - classpath:application-secret.yml
   datasource:

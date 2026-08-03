@@ -15,7 +15,7 @@ ai:
               completions-path: v1/chat/completions
               embeddings-path: v1/embeddings
             chat-model:
-              model: deepseek-v4-pro
+              model: deepseek-v4-flash
               tool-mcp-list:
                 - sse:
                     name: baidu-search
@@ -24,6 +24,9 @@ ai:
                     request-timeout: 500000
                 - local:
                     name: ShellExecutorToolCallbackProvider
+              tool-skills-list:
+                - type: resource
+                  path: agent/skills
             agents:
               # 1. 需求分析与检索智能体
               - name: agent_analyst
