@@ -218,7 +218,7 @@ ${graphModelXml}
 </mxfile>`;
 }
 
-function extractDrawIoXml(text: string) {
+export function extractDrawIoXml(text: string) {
   const mxfileMatch = text.match(/<mxfile[\s\S]*?<\/mxfile>/i);
   if (mxfileMatch?.[0]) {
     return mxfileMatch[0].trim();

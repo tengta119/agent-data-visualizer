@@ -7,6 +7,7 @@ import AgentDrawIoPanel from "@/src/components/agent-drawio-panel";
 import {
   createAgentSession,
   isBackendUnavailableError,
+  extractDrawIoXml,
   streamChatWithAgent,
 } from "@/src/api/agent";
 import { COOKIE_NAME, deleteCookieValue, formatTime } from "@/src/utils/cookie";
@@ -142,10 +143,11 @@ export default function ChatStreamClient({
 
             if (streamMessage.type === "result") {
               const nextContent = streamMessage.content || "";
+              const drawioXml = extractDrawIoXml(nextContent);
               setResultText(nextContent);
               setResultStage(streamMessage.stage || "result");
-              if ((streamMessage.stage || "").toLowerCase() === "drawio") {
-                setDiagramXml(nextContent || null);
+              if (drawioXml) {
+                setDiagramXml(drawioXml);
                 setStatusMessage("已收到最终 draw.io 结果。");
               } else {
                 setDiagramXml(null);

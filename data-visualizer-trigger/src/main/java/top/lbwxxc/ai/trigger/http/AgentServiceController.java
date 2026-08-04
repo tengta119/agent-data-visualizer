@@ -17,6 +17,7 @@ import top.lbwxxc.ai.types.enums.ResponseCode;
 import top.lbwxxc.ai.types.exception.AppException;
 
 import javax.annotation.Resource;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -43,7 +44,7 @@ public class AgentServiceController implements IAgentService {
     @Resource
     private AgentStreamBridge agentStreamBridge;
 
-    private static final Pattern JSON_PATTERN = Pattern.compile("```json\\s*(\\{.*?})\\s*```", Pattern.DOTALL);
+    private static final Pattern DRAWIO_XML_PATTERN = Pattern.compile("(?s)(<mxfile[\\s\\S]*?</mxfile>|<mxGraphModel[\\s\\S]*?</mxGraphModel>)");
 
     @RequestMapping(value = "query_ai_agent_config_list", method = RequestMethod.GET)
     @Override
@@ -232,33 +233,144 @@ public class AgentServiceController implements IAgentService {
     }
 
     private ChatResponseDTO parseChatResponse(String result, String fallbackContent) {
-        ChatResponseDTO responseDTO = new ChatResponseDTO();
+        String raw = StringUtils.defaultString(result).trim();
+        String fallback = StringUtils.defaultIfBlank(fallbackContent, raw);
 
-        try {
-            Matcher matcher = JSON_PATTERN.matcher(StringUtils.defaultString(result));
-            if (!matcher.find()) {
-                throw new IllegalArgumentException("未找到 JSON 数据");
-            }
-
-            String json = matcher.group(1);
-            ChatResponseDTO parsed = JSON.parseObject(json, ChatResponseDTO.class);
-
-            if (parsed != null) {
-                responseDTO = parsed;
-                if (responseDTO.getType() == null) {
-                    responseDTO.setType("user");
-                }
-            } else {
-                responseDTO.setType("user");
-                responseDTO.setContent(fallbackContent);
-            }
-        } catch (Exception e) {
-            responseDTO.setType("user");
-            responseDTO.setContent(fallbackContent);
-            log.info("反序列化出现错误 {}", e.getMessage());
+        ChatResponseDTO parsed = tryParseJsonResponse(raw);
+        if (parsed != null) {
+            return parsed;
         }
 
+        String drawioXml = extractDrawIoXml(raw);
+        if (StringUtils.isNotBlank(drawioXml)) {
+            return buildChatResponse("drawio", drawioXml);
+        }
+
+        return buildChatResponse("user", fallback);
+    }
+
+    private ChatResponseDTO tryParseJsonResponse(String raw) {
+        if (StringUtils.isBlank(raw)) {
+            return null;
+        }
+
+        List<ChatResponseDTO> responses = extractJsonResponses(raw);
+        for (int index = responses.size() - 1; index >= 0; index--) {
+            ChatResponseDTO response = responses.get(index);
+            String type = StringUtils.defaultString(response.getType()).trim().toLowerCase();
+
+            if ("user".equals(type)) {
+                return buildChatResponse("user", response.getContent());
+            }
+
+            if ("drawio".equals(type) || "drawio_done".equals(type)) {
+                String content = StringUtils.defaultString(response.getContent()).trim();
+                if (StringUtils.isBlank(content)) {
+                    continue;
+                }
+
+                String drawioXml = extractDrawIoXml(content);
+                return buildChatResponse(
+                        "drawio",
+                        StringUtils.defaultIfBlank(drawioXml, content)
+                );
+            }
+        }
+
+        return null;
+    }
+
+    private List<ChatResponseDTO> extractJsonResponses(String raw) {
+        List<ChatResponseDTO> responses = new ArrayList<>();
+        for (int index = 0; index < raw.length(); index++) {
+            if (raw.charAt(index) != '{') {
+                continue;
+            }
+
+            String candidate = extractBalancedJsonCandidate(raw, index);
+            if (StringUtils.isBlank(candidate)) {
+                continue;
+            }
+
+            try {
+                ChatResponseDTO response = JSON.parseObject(candidate, ChatResponseDTO.class);
+                if (response != null && isSupportedResponseType(response.getType())) {
+                    responses.add(response);
+                }
+                index += candidate.length() - 1;
+            } catch (Exception e) {
+                log.debug("跳过无效 JSON 片段: {}", e.getMessage());
+            }
+        }
+
+        return responses;
+    }
+
+    private boolean isSupportedResponseType(String type) {
+        String normalizedType = StringUtils.defaultString(type).trim().toLowerCase();
+        return "user".equals(normalizedType)
+                || "drawio".equals(normalizedType)
+                || "drawio_node".equals(normalizedType)
+                || "drawio_edge".equals(normalizedType)
+                || "drawio_done".equals(normalizedType);
+    }
+
+    private String extractBalancedJsonCandidate(String raw, int startIndex) {
+        int depth = 0;
+        boolean inString = false;
+        boolean escaped = false;
+
+        for (int index = startIndex; index < raw.length(); index++) {
+            char current = raw.charAt(index);
+
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (current == '\\') {
+                    escaped = true;
+                    continue;
+                }
+                if (current == '"') {
+                    inString = false;
+                }
+                continue;
+            }
+            if (current == '"') {
+                inString = true;
+                continue;
+            }
+            if (current == '{') {
+                depth++;
+                continue;
+            }
+            if (current != '}') {
+                continue;
+            }
+            depth--;
+            if (depth == 0) {
+                return raw.substring(startIndex, index + 1);
+            }
+        }
+
+        return null;
+    }
+
+    private ChatResponseDTO buildChatResponse(String type, String content) {
+        ChatResponseDTO responseDTO = new ChatResponseDTO();
+        responseDTO.setType(type);
+        responseDTO.setContent(StringUtils.defaultString(content));
         return responseDTO;
+    }
+
+    private String extractDrawIoXml(String raw) {
+        Matcher matcher = DRAWIO_XML_PATTERN.matcher(raw);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+
+        return null;
     }
 
     private void sendStreamError(String requestId, Throwable throwable) {

@@ -13,6 +13,12 @@ type AgentDrawIoPanelProps = {
   diagramXml?: string | null;
 };
 
+type DrawIoLoadOptions = Parameters<DrawIoEmbedRef["load"]>[0] & {
+  fit?: 1;
+  border?: number;
+  maxFitScale?: number;
+};
+
 function escapeXml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -128,7 +134,13 @@ export default function AgentDrawIoPanel(props: AgentDrawIoPanelProps) {
 
   useEffect(() => {
     if (!ready || !drawioRef.current) return;
-    drawioRef.current.load({ xml });
+    // AI 坐标可能从很大的偏移量开始，导入后强制适配并居中，避免图形停在左上角且过小。
+    drawioRef.current.load({
+      xml,
+      fit: 1,
+      border: 32,
+      maxFitScale: 1,
+    } satisfies DrawIoLoadOptions);
   }, [ready, xml]);
 
   return (
