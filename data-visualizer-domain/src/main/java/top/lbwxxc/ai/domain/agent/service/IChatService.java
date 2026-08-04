@@ -23,7 +23,7 @@ public interface IChatService {
 
     List<String> handleMessage(String agentId, String userId, String sessionId, String message);
 
-    Flowable<Event> handleMessageStream(String agentId, String userId, String sessionId, String message);
+    Flowable<Event> handleMessageStream(String agentId, String userId, String sessionId, String requestId, String message);
 
     List<String> handleMessage(ChatCommandEntity chatCommandEntity);
 

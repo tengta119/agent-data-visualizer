@@ -1,10 +1,11 @@
 package top.lbwxxc.ai.domain.agent.model.valobj;
 
+import com.google.adk.agents.BaseAgent;
+import com.google.adk.plugins.BasePlugin;
 import com.google.adk.runner.InMemoryRunner;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
+import lombok.*;
+
+import java.util.List;
 
 /**
  * Ai Agent 智能体注册值对象
@@ -15,6 +16,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
+@Data
 public class AiAgentRegisterVO {
 
     /**
@@ -26,6 +28,10 @@ public class AiAgentRegisterVO {
      * 智能体ID
      */
     private String agentId;
+
+    BaseAgent baseAgent;
+
+    List<BasePlugin> plugins;
 
     /**
      * 智能体名称

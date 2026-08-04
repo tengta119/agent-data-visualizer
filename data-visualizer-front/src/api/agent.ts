@@ -5,6 +5,7 @@ import type {
   ChatData,
   ChatResult,
   ChatRequest,
+  ChatStreamMessage,
   CurrentAgentConfigData,
   CreateSessionData,
   CreateSessionRequest,
@@ -66,6 +67,83 @@ export function isBackendUnavailableError(error: unknown) {
     message.includes("fetch") ||
     message.includes("CORS")
   );
+}
+
+function consumeJsonMessages(source: string) {
+  const messages: ChatStreamMessage[] = [];
+  let startIndex = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  let lastConsumedIndex = 0;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+
+    if (startIndex < 0) {
+      if (/\s/.test(char)) {
+        lastConsumedIndex = index + 1;
+        continue;
+      }
+
+      if (char === "{") {
+        startIndex = index;
+        depth = 1;
+        inString = false;
+        escaped = false;
+      } else {
+        lastConsumedIndex = index + 1;
+      }
+      continue;
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (char === "\\") {
+        escaped = true;
+      } else if (char === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char !== "}") {
+      continue;
+    }
+
+    depth -= 1;
+    if (depth > 0) {
+      continue;
+    }
+
+    const rawMessage = source.slice(startIndex, index + 1);
+    const parsed = safeParseJson(rawMessage);
+    if (parsed && typeof parsed === "object" && "type" in parsed) {
+      messages.push(parsed as ChatStreamMessage);
+    }
+
+    startIndex = -1;
+    depth = 0;
+    inString = false;
+    escaped = false;
+    lastConsumedIndex = index + 1;
+  }
+
+  return {
+    messages,
+    rest: startIndex >= 0 ? source.slice(startIndex) : source.slice(lastConsumedIndex),
+  };
 }
 
 export async function queryAgentConfigList(options?: RequestInit) {
@@ -245,4 +323,59 @@ export async function chatWithAgent(payload: ChatRequest) {
   });
 
   return normalizeChatResponse(ensureSuccess(response));
+}
+
+export async function streamChatWithAgent(
+  payload: ChatRequest,
+  options: {
+    signal?: AbortSignal;
+    onMessage: (message: ChatStreamMessage) => void;
+  },
+) {
+  const response = await fetch(buildApiUrl(AGENT_API_PATHS.chatStream), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+    signal: options.signal,
+  });
+
+  if (!response.ok) {
+    const raw = await response.text();
+    const parsed = safeParseJson(raw);
+    const message =
+      parsed && typeof parsed === "object" && "info" in parsed
+        ? String(parsed.info)
+        : raw || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  if (!response.body) {
+    throw new Error("当前环境不支持流式读取响应");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parsed = consumeJsonMessages(buffer);
+    buffer = parsed.rest;
+
+    for (const message of parsed.messages) {
+      options.onMessage(message);
+    }
+  }
+
+  buffer += decoder.decode();
+  const trailing = consumeJsonMessages(buffer);
+  for (const message of trailing.messages) {
+    options.onMessage(message);
+  }
 }

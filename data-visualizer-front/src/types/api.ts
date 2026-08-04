@@ -56,6 +56,17 @@ export type ChatResult = {
   drawio: string | null;
 };
 
+export type ChatStreamMessageType = "log" | "result" | "done" | "error";
+
+export type ChatStreamMessage = {
+  type: ChatStreamMessageType;
+  stage?: string;
+  sessionId?: string;
+  requestId?: string;
+  content?: string;
+  timestamp?: number;
+};
+
 export type AgentConfigTables = Record<string, JsonValue>;
 
 export type CurrentAgentConfigData = {

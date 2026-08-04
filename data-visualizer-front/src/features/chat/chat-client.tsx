@@ -853,6 +853,13 @@ export default function ChatClient({
               Agent 配置
             </Link>
 
+            <Link
+              href="/chat-stream"
+              className="hover-lift fluent-secondary flex h-[56px] items-center justify-center rounded-[18px] px-5 text-sm font-semibold"
+            >
+              流式测试
+            </Link>
+
             <button
               type="button"
               onClick={handleLogout}

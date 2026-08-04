@@ -9,13 +9,11 @@ import top.lbwxxc.ai.types.enums.ResponseCode;
 import top.lbwxxc.ai.types.exception.AppException;
 import cn.bugstack.wrench.design.framework.tree.StrategyHandler;
 import com.google.adk.agents.BaseAgent;
-import com.google.adk.agents.SequentialAgent;
 import com.google.adk.plugins.BasePlugin;
 import com.google.adk.runner.InMemoryRunner;
 import com.google.common.collect.ImmutableList;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -40,16 +38,18 @@ public class RunnerNode extends AbstractArmorySupport {
         String agentId = agent.getAgentId();
         String agentName = agent.getAgentName();
         String agentDesc = agent.getAgentDesc();
-
-        InMemoryRunner runner = getRunner(dynamicContext, aiAgentConfigTableVO, appName);
+        BaseAgent baseAgent = dynamicContext.getAgentGroup().get(agentName);
 
         AiAgentRegisterVO aiAgentRegisterVO = AiAgentRegisterVO.builder()
                 .appName(appName)
                 .agentId(agentId)
                 .agentName(agentName)
+                .baseAgent(baseAgent)
                 .agentDesc(agentDesc)
-                .runner(runner)
                 .build();
+
+        InMemoryRunner runner = getRunner(dynamicContext, aiAgentConfigTableVO, appName, aiAgentRegisterVO);
+        aiAgentRegisterVO.setRunner(runner);
 
         // 注册到 Spring 容器
         registerBean(agentId, AiAgentRegisterVO.class, aiAgentRegisterVO);
@@ -57,7 +57,7 @@ public class RunnerNode extends AbstractArmorySupport {
         return aiAgentRegisterVO;
     }
 
-    private InMemoryRunner getRunner(DefaultArmoryFactory.DynamicContext dynamicContext, AiAgentConfigTableVO aiAgentConfigTableVO, String appName) {
+    private InMemoryRunner getRunner(DefaultArmoryFactory.DynamicContext dynamicContext, AiAgentConfigTableVO aiAgentConfigTableVO, String appName, AiAgentRegisterVO aiAgentRegisterVO) {
         AiAgentConfigTableVO.Module.Runner runnerConfig = aiAgentConfigTableVO.getModule().getRunner();
 
         String agentName = runnerConfig.getAgentName();
@@ -79,6 +79,7 @@ public class RunnerNode extends AbstractArmorySupport {
         } else {
             plugins = ImmutableList.of();
         }
+        aiAgentRegisterVO.setPlugins(plugins);
 
         return new InMemoryRunner(baseAgent, appName, plugins);
     }
