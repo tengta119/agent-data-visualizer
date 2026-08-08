@@ -54,6 +54,7 @@ export default function ChatStreamClient({
   );
   const [sessionId, setSessionId] = useState("");
   const [message, setMessage] = useState("");
+  const [latestSubmittedMessage, setLatestSubmittedMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [status, setStatus] = useState(
     initialBackendIssue ? `接口不可用：${initialBackendIssue}` : "准备开始流式联调。",
@@ -85,6 +86,7 @@ export default function ChatStreamClient({
     setSending(false);
     setSessionId("");
     setMessage("");
+    setLatestSubmittedMessage("");
     setLogs([]);
     setResultText("");
     setResultStage("result");
@@ -114,6 +116,7 @@ export default function ChatStreamClient({
     setResultText("");
     setResultStage("result");
     setDiagramXml(null);
+    setLatestSubmittedMessage(trimmedMessage);
     setStatusMessage("正在连接流式接口…");
 
     try {
@@ -343,7 +346,7 @@ export default function ChatStreamClient({
                   }`
                 : "-"
             }
-            latestUserMessage={message}
+            latestUserMessage={latestSubmittedMessage}
             latestAgentMessage={resultText}
             latestAgentMeta={status}
             diagramXml={diagramXml}

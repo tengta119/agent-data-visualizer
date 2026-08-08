@@ -116,7 +116,10 @@ function base64ToUint8Array(base64: string) {
 }
 
 async function tryInflate(bytes: Uint8Array, format: "deflate-raw" | "deflate") {
-  const stream = new Blob([bytes]).stream().pipeThrough(
+  const blobBytes = new Uint8Array(bytes.byteLength);
+  blobBytes.set(bytes);
+
+  const stream = new Blob([blobBytes.buffer]).stream().pipeThrough(
     new DecompressionStream(format),
   );
   const buffer = await new Response(stream).arrayBuffer();

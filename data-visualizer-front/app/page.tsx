@@ -6,5 +6,5 @@ export default async function Home() {
   const cookieStore = await cookies();
   const payload = parseLoginPayload(cookieStore.get(COOKIE_NAME)?.value);
 
-  redirect(payload?.user ? "/chat" : "/login");
+  redirect(payload?.user ? "/chat-stream" : "/login");
 }

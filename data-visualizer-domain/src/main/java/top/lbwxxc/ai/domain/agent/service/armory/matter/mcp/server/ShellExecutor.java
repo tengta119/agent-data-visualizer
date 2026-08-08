@@ -14,6 +14,8 @@ import top.lbwxxc.ai.domain.agent.model.valobj.GatewayResponseVO;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -26,12 +28,31 @@ public class ShellExecutor {
     private IBusinessPort businessPort;
 
     public ShellExecutor() throws IOException {
-
-        process = new ProcessBuilder("pwsh.exe")
-                        .redirectErrorStream(true)
-                        .start();
+        process = startShellProcess();
         writer = process.outputWriter();
         reader = process.inputReader();
+    }
+
+    private Process startShellProcess() throws IOException {
+        List<String> candidates = new ArrayList<>();
+        candidates.add("pwsh.exe");
+        candidates.add("pwsh");
+        candidates.add("bash");
+        candidates.add("sh");
+
+        IOException lastException = null;
+        for (String candidate : candidates) {
+            try {
+                return new ProcessBuilder(candidate)
+                        .redirectErrorStream(true)
+                        .start();
+            } catch (IOException e) {
+                lastException = e;
+                log.warn("shell 启动失败，尝试回退到下一个实现 shell:{}", candidate);
+            }
+        }
+
+        throw new IOException("未找到可用的 shell 进程，已尝试: " + String.join(", ", candidates), lastException);
     }
 
     @Tool(description = "调用命令行")

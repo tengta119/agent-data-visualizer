@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.logging.Level;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
@@ -57,7 +58,7 @@ public class AiAgentAutoConfig implements ApplicationListener<ApplicationReadyEv
             }
 
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            log.log(Level.SEVERE, "Ai Agent 自动装配失败，应用继续启动，请检查外部 MCP/Agent 配置", e);
         }
     }
 

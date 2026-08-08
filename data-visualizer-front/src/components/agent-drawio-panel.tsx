@@ -135,12 +135,13 @@ export default function AgentDrawIoPanel(props: AgentDrawIoPanelProps) {
   useEffect(() => {
     if (!ready || !drawioRef.current) return;
     // AI 坐标可能从很大的偏移量开始，导入后强制适配并居中，避免图形停在左上角且过小。
-    drawioRef.current.load({
+    const loadOptions: DrawIoLoadOptions = {
       xml,
       fit: 1,
       border: 32,
       maxFitScale: 1,
-    } satisfies DrawIoLoadOptions);
+    };
+    drawioRef.current.load(loadOptions);
   }, [ready, xml]);
 
   return (

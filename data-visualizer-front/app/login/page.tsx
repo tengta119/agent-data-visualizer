@@ -8,7 +8,7 @@ export default async function LoginPage() {
   const payload = parseLoginPayload(cookieStore.get(COOKIE_NAME)?.value);
 
   if (payload?.user) {
-    redirect("/chat");
+    redirect("/chat-stream");
   }
 
   return <LoginClient />;

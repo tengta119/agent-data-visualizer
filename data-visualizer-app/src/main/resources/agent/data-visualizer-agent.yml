@@ -17,11 +17,6 @@ ai:
             chat-model:
               model: deepseek-v4-flash
               tool-mcp-list:
-                - sse:
-                    name: baidu-search
-                    base-uri: http://appbuilder.baidu.com/v2/ai_search/mcp/
-                    sse-endpoint: sse?api_key=${bec.key}
-                    request-timeout: 500000
                 - local:
                     name: ShellExecutorToolCallbackProvider
               tool-skills-list:

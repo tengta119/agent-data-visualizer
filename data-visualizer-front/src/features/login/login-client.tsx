@@ -53,7 +53,7 @@ export default function LoginClient() {
     setStatus("登录成功，正在跳转…");
 
     startTransition(() => {
-      router.replace("/chat");
+      router.replace("/chat-stream");
     });
   }
 
@@ -62,79 +62,9 @@ export default function LoginClient() {
       <div className="absolute left-[6%] top-14 h-48 w-48 rounded-full bg-[radial-gradient(circle,rgba(149,194,255,0.52),rgba(149,194,255,0))]" />
       <div className="absolute bottom-10 right-[10%] h-60 w-60 rounded-full bg-[radial-gradient(circle,rgba(199,224,255,0.9),rgba(199,224,255,0))]" />
 
-      <div className="grid w-full max-w-7xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <section className="glass-panel hover-lift overflow-hidden rounded-[34px]">
-          <div className="relative flex h-full flex-col gap-7 px-7 py-7 md:px-9 md:py-9">
-            <div className="absolute inset-x-0 top-0 h-20 bg-[linear-gradient(180deg,rgba(255,255,255,0.55),transparent)]" />
+      <div className="flex w-full justify-center">
 
-            <div className="relative flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-[linear-gradient(180deg,#ffffff,#dceafe)] text-sm font-bold tracking-[0.12em] text-[#0f6cfd] shadow-[0_10px_24px_rgba(107,140,194,0.18)]">
-                DV
-              </div>
-              <div className="flex flex-col gap-1">
-                <strong className="text-base font-semibold text-[#1d3252]">
-                  AI 智能体工作台 By Ai Agent Scaffold - @小傅哥
-                </strong>
-                <span className="text-xs text-[var(--muted-soft)]">
-                  Fluent 2 风格 · Windows 11 生态亲和 · 系统伴侣体验
-                </span>
-              </div>
-            </div>
-
-            <div className="relative max-w-3xl">
-              <div className="mb-4 flex flex-wrap gap-2">
-                {["Acrylic", "System UI", "Cloud Console"].map((item) => (
-                  <span
-                    key={item}
-                    className="rounded-full border border-white/80 bg-white/66 px-3 py-1 text-[11px] font-medium text-[#3b5f93] shadow-[inset_0_1px_0_rgba(255,255,255,0.92)]"
-                  >
-                    {item}
-                  </span>
-                ))}
-              </div>
-              <h1 className="text-4xl font-semibold leading-tight tracking-tight text-[#17304d] md:text-[3.6rem]">
-                一眼就像系统自带的
-                <br className="hidden md:block" />
-                智能体控制中心
-              </h1>
-              <p className="mt-5 max-w-2xl text-sm leading-8 text-[var(--muted)] md:text-[15px]">
-                这套界面以 Fluent 2 为视觉基底，强调浅色渐变背景、亚克力玻璃卡片、
-                精确圆角和稳定的系统级反馈。当前仍使用演示登录：
-                账号 <b>admin</b>，密码 <b>admin</b>。登录成功后会写入 Cookie 并跳转到工作台。
-              </p>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              {[
-                ["亚克力材质", "半透明卡片叠加模糊层，形成轻盈的系统面板质感"],
-                ["蓝色系统控件", "按钮、状态与重点操作采用 Fluent 蓝，识别一致"],
-                ["轻量空间反馈", "Hover 仅轻微抬升与阴影增强，保持控制台克制气质"],
-                ["Windows 生态亲和", "让用户直觉感知这是桌面应用的 Web 伙伴"],
-              ].map(([title, desc]) => (
-                <div
-                  key={title}
-                  className="surface-panel hover-lift rounded-[26px] border border-white/82 px-4 py-4"
-                >
-                  <div className="flex items-start gap-3">
-                    <span className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-[16px] bg-[linear-gradient(180deg,#f8fbff,#dceaff)] text-[11px] font-semibold text-[#0f6cfd] shadow-[inset_0_1px_0_rgba(255,255,255,0.96)]">
-                      F2
-                    </span>
-                    <div>
-                      <b className="block text-sm text-[#203756]">{title}</b>
-                      <span className="mt-1 block text-xs leading-6 text-[var(--muted-soft)]">
-                        {desc}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <FluentConsolePreview />
-          </div>
-        </section>
-
-        <section className="glass-panel hover-lift flex overflow-hidden rounded-[34px]">
+        <section className="glass-panel hover-lift flex w-full max-w-[620px] overflow-hidden rounded-[34px]">
           <div className="relative flex w-full flex-col justify-center gap-5 px-6 py-7 md:px-8">
             <div className="absolute right-0 top-0 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(171,205,255,0.42),rgba(171,205,255,0))]" />
             <div className="surface-panel fluent-accent-border relative rounded-[30px] p-6 md:p-7">
