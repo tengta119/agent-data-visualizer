@@ -159,7 +159,7 @@ public class AgentServiceController implements IAgentService {
     @RequestMapping(value = "chat_stream", method = RequestMethod.POST)
     @Override
     public ResponseBodyEmitter chatStream(@RequestBody ChatRequestDTO requestDTO) {
-        ResponseBodyEmitter emitter = new ResponseBodyEmitter(10 * 60 * 1000L);
+        ResponseBodyEmitter emitter = new ResponseBodyEmitter(20 * 60 * 1000L);
         AtomicReference<String> requestIdRef = new AtomicReference<>();
         AtomicReference<Disposable> streamDisposableRef = new AtomicReference<>();
         AtomicReference<String> finalResultRef = new AtomicReference<>("");
@@ -185,6 +185,8 @@ public class AgentServiceController implements IAgentService {
                                     if (StringUtils.isNotBlank(content)) {
                                         finalResultRef.set(content);
                                     }
+                                    AgentStreamResponseDTO tmp = AgentStreamResponseDTO.log(currentSessionId, currentRequestId, "tmp", content);
+                                    agentStreamBridge.publish(tmp);
                                 },
                                 throwable -> {
                                     log.error("流式对话失败 sessionId:{} requestId:{}", currentSessionId, currentRequestId, throwable);

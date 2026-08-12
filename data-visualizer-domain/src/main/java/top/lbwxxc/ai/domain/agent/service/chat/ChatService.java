@@ -1,6 +1,5 @@
 package top.lbwxxc.ai.domain.agent.service.chat;
 
-import com.google.adk.agents.BaseAgent;
 import com.google.adk.plugins.BasePlugin;
 import top.lbwxxc.ai.domain.agent.model.entity.ChatCommandEntity;
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
