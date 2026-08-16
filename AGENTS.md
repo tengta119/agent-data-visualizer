@@ -21,3 +21,17 @@ Java 使用 4 空格缩进，并遵循现有的 `top.lbwxxc.ai` 包结构。类�
 
 ## 提交与 Pull Request 规范
 新提交也应保持简洁、使用祈使语气，并尽量一次只处理一个主题。Pull Request 需要说明影响的模块、列出本地验证命令、关联相关 issue，并为 UI 或 API 变更附上截图或请求响应示例。不要提交密钥或凭证，镜像仓库账号等敏感信息应保存在 `.local-config` 这类本地文件中。
+
+
+
+## Documentation Rules
+
+完成任务后，必须检查：
+
+1. architecture.md 是否需要更新
+2. business.md 是否需要更新
+3. 是否需要新增 ADR （docs/decisions/ADR-001-xxx.md → 为什么决定这么做）
+
+只有在项目事实发生变化时才修改文档。
+
+不要为了增加文档内容而修改文档。

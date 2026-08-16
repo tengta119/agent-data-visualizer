@@ -143,5 +143,5 @@ ai:
               # 指定入口为串行工作流，这是最稳健的配置
               agent-name: sequential_draw_process
               plugin-name-list:
-                - myTestPlugin
+                - contextCompactionPlugin
                 - myLogPlugin

@@ -7,6 +7,7 @@ import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentRegisterVO;
 import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
 import top.lbwxxc.ai.domain.agent.service.IChatService;
 import top.lbwxxc.ai.domain.agent.service.armory.factory.DefaultArmoryFactory;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.plugin.ContextCompactionPlugin;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.plugin.MyLogPlugin;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 import top.lbwxxc.ai.types.enums.ResponseCode;
@@ -184,6 +185,9 @@ public class ChatService implements IChatService {
                 // 不能直接改 registerVO 里的插件列表，否则并发请求会共享同一个上下文插件实例。
                 plugins.set(i, new MyLogPlugin(requestId, agentStreamBridge));
                 replacedLogPlugin = true;
+            }
+            if (basePlugin.getName().equals("ContextCompactionPlugin")) {
+                plugins.set(i, new ContextCompactionPlugin(requestId, agentStreamBridge));
             }
         }
 
