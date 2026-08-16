@@ -10,3 +10,7 @@ Thumbs.db
 .idea/
 data
 data-visualizer-app/src/main/resources/application-secret.yml
+/docs/
+/CLAUDE.md
+/Java Interviewer System Prompt.md
+/博客.md
