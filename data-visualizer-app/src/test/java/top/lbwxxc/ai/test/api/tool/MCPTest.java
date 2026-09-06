@@ -7,7 +7,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit4.SpringRunner;
-import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.ShellExecutor;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.ShellExecutor;
 
 import java.util.ArrayList;
 import java.util.List;

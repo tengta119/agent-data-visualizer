@@ -119,7 +119,7 @@ public class NettySocketServer {
             String json = JSON.toJSONString(command);
             // 发送数据，注意要带上换行符，因为客户端（或者解码器）可能依赖它
             channel.writeAndFlush(json + "\n");
-            log.info("Sent command: {}", json);
+            log.info("Sent command request: id={}, host={}", command.getId(), command.getHostString());
 
             // 等待响应，设置超时时间，例如 30 秒
             return future.get(30, TimeUnit.SECONDS);

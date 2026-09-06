@@ -73,8 +73,7 @@ class GatewaySocketClient:
 
             command = GatewayCommandEntity.from_json(message)
             logger.info(
-                "Received command %s for host %s",
-                command.command,
+                "Received command request for host %s",
                 command.host_string,
             )
             response = self._handle_command(command)

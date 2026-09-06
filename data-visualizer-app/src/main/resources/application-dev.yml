@@ -1,6 +1,32 @@
 server:
   port: 8091
 
+command:
+  execution:
+    policy:
+      max-command-length: 1000
+      max-output-chars: 1048576
+      local-allow:
+        - clients
+        - pwd
+        - ls
+        - dir
+        - whoami
+        - uname
+        - git status
+        - git diff
+      remote-allow:
+        - pwd
+        - ls
+        - dir
+        - whoami
+        - uname
+        - git status
+        - git diff
+      # 必须显式配置远程终端名称；空列表表示拒绝所有 remote 命令。
+      remote-allowed-hosts: []
+
+
 # 线程池配置
 thread:
   pool:

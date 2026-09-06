@@ -37,7 +37,10 @@ COPY --from=frontend-builder /workspace/data-visualizer-front/package.json /app/
 COPY --from=frontend-builder /workspace/data-visualizer-front/node_modules /app/frontend/node_modules
 COPY start.sh /app/start.sh
 
-RUN chmod +x /app/start.sh
+RUN chmod +x /app/start.sh \
+    && chown -R node:node /app
+
+USER node
 
 EXPOSE 3000 8091 9077
 CMD ["/app/start.sh"]

@@ -1,6 +1,6 @@
 package top.lbwxxc.ai;
 
-import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.ShellExecutor ;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.ShellExecutor;
 import org.springframework.ai.tool.ToolCallbackProvider;
 import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.beans.factory.annotation.Configurable;
