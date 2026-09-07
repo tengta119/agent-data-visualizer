@@ -8,8 +8,15 @@ COPY data-visualizer-domain ./data-visualizer-domain
 COPY data-visualizer-trigger ./data-visualizer-trigger
 COPY data-visualizer-infrastructure ./data-visualizer-infrastructure
 COPY data-visualizer-types ./data-visualizer-types
+COPY docker-maven-settings.xml /root/.m2/settings.xml
 
 RUN mvn -pl data-visualizer-app -am clean package -DskipTests
+
+# 安全：从 fat JAR 中剔除明文凭据，密钥改为运行期通过 OPENAI_KEY 环境变量注入
+RUN apt-get update -qq && apt-get install -qq -y --no-install-recommends zip \
+    && zip -q -d data-visualizer-app/target/ai-agent-scaffold-lite-app.jar "BOOT-INF/classes/application-secret.yml" \
+    && if unzip -l data-visualizer-app/target/ai-agent-scaffold-lite-app.jar | grep -q "application-secret.yml"; then echo "ERROR: secret still present in jar"; exit 1; else echo "secret removed from jar"; fi \
+    && rm -rf /var/lib/apt/lists/*
 
 FROM node:22-alpine AS frontend-builder
 WORKDIR /workspace/data-visualizer-front

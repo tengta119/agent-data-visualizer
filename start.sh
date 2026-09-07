@@ -16,7 +16,8 @@ cd /app/frontend
 npm start -- -H 0.0.0.0 -p 3000 &
 FRONTEND_PID=$!
 
-java ${JAVA_OPTS:-"-Xms512m -Xmx1024m"} -jar /app/backend/app.jar &
+JAVA_OPTS="${JAVA_OPTS:--Xms512m -Xmx1024m}"
+java ${JAVA_OPTS} -jar /app/backend/app.jar &
 BACKEND_PID=$!
 
 wait -n "${FRONTEND_PID}" "${BACKEND_PID}"

@@ -1,0 +1,29 @@
+# 服务器部署用：直接拉取 Docker Hub 镜像，无需源码
+# 用法：将本文件与 .env 放在服务器同一目录，执行 docker compose up -d
+services:
+  data-visualizer:
+    container_name: data-visualizer
+    image: lbwxxc/data-visualizer:latest
+    ports:
+      - "3000:3000"
+      - "8091:8091"
+      - "9077:9077"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SERVER_PORT: 8091
+      GATEWAY_SOCKET_PORT: 9077
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://47.115.213.32:8091}
+      OPENAI_KEY: ${OPENAI_KEY:-}
+      JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx768m}
+      COMMAND_EXECUTION_POLICY_REMOTE_ALLOWED_HOSTS: ${COMMAND_EXECUTION_POLICY_REMOTE_ALLOWED_HOSTS:-}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: ${CONTAINER_MEMORY_LIMIT:-1536m}
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

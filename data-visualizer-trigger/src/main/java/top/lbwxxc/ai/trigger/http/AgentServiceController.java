@@ -19,6 +19,7 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approva
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalResolveResult;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalResolveStatus;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalService;
+import top.lbwxxc.ai.domain.agent.service.chat.converter.JsonToDrawioConverter;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamResponseDTO;
 import top.lbwxxc.ai.types.enums.ResponseCode;
@@ -192,6 +193,10 @@ public class AgentServiceController implements IAgentService {
             final String currentRequestId = requestId;
             agentStreamBridge.register(currentSessionId, currentRequestId, emitter);
 
+            // 流式执行期间累积的事件内容：与同步路径对齐，最终解析不依赖"最终 JSON 恰好是最后一个事件"。
+            // RxJava 事件回调串行执行，StringBuilder 无需额外同步。
+            StringBuilder accumulatedContent = new StringBuilder();
+
             // 请求执行上下文：只在已验证为同线程的执行链内通过 ThreadLocal 传递，
             // 设置与清理必须位于同一个 runAsync 执行体内（不能在 Controller 线程设置后期待自动传播）。
             CommandExecutionContext executionContext = new CommandExecutionContext(
@@ -209,6 +214,7 @@ public class AgentServiceController implements IAgentService {
                                         String content = event.stringifyContent();
                                         if (StringUtils.isNotBlank(content)) {
                                             finalResultRef.set(content);
+                                            accumulatedContent.append(content).append('\n');
                                         }
                                         AgentStreamResponseDTO tmp = AgentStreamResponseDTO.log(currentSessionId, currentRequestId, "tmp", content);
                                         agentStreamBridge.publish(tmp);
@@ -221,7 +227,7 @@ public class AgentServiceController implements IAgentService {
                                     },
                                     () -> {
                                         try {
-                                            ChatResponseDTO responseDTO = parseChatResponse(finalResultRef.get(), finalResultRef.get());
+                                            ChatResponseDTO responseDTO = parseChatResponse(finalResultRef.get(), accumulatedContent.toString());
                                             AgentStreamResponseDTO agentStreamResponseDTO = AgentStreamResponseDTO.builder()
                                                     .type("result")
                                                     .stage(StringUtils.defaultIfBlank(responseDTO.getType(), "user"))
@@ -366,13 +372,24 @@ public class AgentServiceController implements IAgentService {
             return null;
         }
 
-        List<ChatResponseDTO> responses = extractJsonResponses(raw);
-        for (int index = responses.size() - 1; index >= 0; index--) {
-            ChatResponseDTO response = responses.get(index);
+        List<JsonCandidate> candidates = extractJsonResponses(raw);
+        for (int index = candidates.size() - 1; index >= 0; index--) {
+            JsonCandidate candidate = candidates.get(index);
+            ChatResponseDTO response = candidate.getResponse();
             String type = StringUtils.defaultString(response.getType()).trim().toLowerCase();
 
             if ("user".equals(type)) {
                 return buildChatResponse("user", response.getContent());
+            }
+
+            // 新协议：LLM 输出 drawio_graph JSON DSL，由服务端转换器生成 XML（TASK-004）。
+            // 转换失败时继续向下检查旧类型与 XML 提取，保证兜底路径不受影响。
+            if ("drawio_graph".equals(type)) {
+                String drawioXml = JsonToDrawioConverter.tryConvert(candidate.getRawJson());
+                if (StringUtils.isNotBlank(drawioXml)) {
+                    return buildChatResponse("drawio", drawioXml);
+                }
+                continue;
             }
 
             if ("drawio".equals(type) || "drawio_done".equals(type)) {
@@ -392,8 +409,8 @@ public class AgentServiceController implements IAgentService {
         return null;
     }
 
-    private List<ChatResponseDTO> extractJsonResponses(String raw) {
-        List<ChatResponseDTO> responses = new ArrayList<>();
+    private List<JsonCandidate> extractJsonResponses(String raw) {
+        List<JsonCandidate> responses = new ArrayList<>();
         for (int index = 0; index < raw.length(); index++) {
             if (raw.charAt(index) != '{') {
                 continue;
@@ -407,7 +424,7 @@ public class AgentServiceController implements IAgentService {
             try {
                 ChatResponseDTO response = JSON.parseObject(candidate, ChatResponseDTO.class);
                 if (response != null && isSupportedResponseType(response.getType())) {
-                    responses.add(response);
+                    responses.add(new JsonCandidate(response, candidate));
                 }
                 index += candidate.length() - 1;
             } catch (Exception e) {
@@ -418,13 +435,33 @@ public class AgentServiceController implements IAgentService {
         return responses;
     }
 
+    /** JSON 候选：解析后的响应 DTO + 原始 JSON 文本（drawio_graph 转换需要原始 nodes/edges）。 */
+    private static final class JsonCandidate {
+        private final ChatResponseDTO response;
+        private final String rawJson;
+
+        private JsonCandidate(ChatResponseDTO response, String rawJson) {
+            this.response = response;
+            this.rawJson = rawJson;
+        }
+
+        private ChatResponseDTO getResponse() {
+            return response;
+        }
+
+        private String getRawJson() {
+            return rawJson;
+        }
+    }
+
     private boolean isSupportedResponseType(String type) {
         String normalizedType = StringUtils.defaultString(type).trim().toLowerCase();
         return "user".equals(normalizedType)
                 || "drawio".equals(normalizedType)
                 || "drawio_node".equals(normalizedType)
                 || "drawio_edge".equals(normalizedType)
-                || "drawio_done".equals(normalizedType);
+                || "drawio_done".equals(normalizedType)
+                || "drawio_graph".equals(normalizedType);
     }
 
     private String extractBalancedJsonCandidate(String raw, int startIndex) {

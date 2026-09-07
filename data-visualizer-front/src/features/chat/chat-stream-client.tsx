@@ -67,11 +67,11 @@ const APPROVAL_STATUS_TEXT: Record<string, string> = {
   ended: "本次流式请求已结束，审批已失效",
 };
 
-function isApprovalActionable(entry: ApprovalEntry | null) {
+function isApprovalActionable(entry: ApprovalEntry | null): entry is ApprovalEntry {
   return entry !== null && entry.status === "pending" && !entry.submitting;
 }
 
-function isApprovalAwaiting(entry: ApprovalEntry | null) {
+function isApprovalAwaiting(entry: ApprovalEntry | null): entry is ApprovalEntry {
   return entry !== null && (entry.status === "pending" || entry.status === "submitting");
 }
 

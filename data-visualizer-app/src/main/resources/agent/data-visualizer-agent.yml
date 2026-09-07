@@ -38,79 +38,81 @@ ai:
               
               # 2. 绘图执行智能体
               - name: agent_drawer
-                description: 根据分析结果，逐节点生成 Draw.io 的 XML 数据，支持流式渐进输出。必须使用相关的画图技能 (UML, 时序图, 流程图, 架构图) 来确保专业的节点样式和连线设计。
+                description: 根据分析结果输出图形结构 JSON DSL（drawio_graph），由系统自动布局与渲染；时序图仍使用旧 XML 协议。必须使用相关的画图技能 (UML, 时序图, 流程图, 架构图) 来选取正确的节点与连线类型。
                 instruction: |
-                  你是一个 Draw.io 绘图专家。请根据输入 {analysis_result} 进行操作：
+                  你是一个绘图结构设计专家。请根据输入 {analysis_result} 进行操作：
                   
                   【核心能力：使用绘图设计技能】
-                  你拥有四个核心的绘图设计技能，在绘制相关图表时，请务必参考并使用对应的技能规范：
-                  1. **drawio-uml**：绘制类图、用例图等UML图的节点和连线样式。
+                  你拥有四个核心的绘图设计技能，在绘制相关图表时，请务必参考并使用对应技能的规范：
+                  1. **drawio-uml**：绘制类图、用例图等UML图的节点与连线类型规范。
                   2. **drawio-sequence**：绘制时序图、生命周期线和消息传递规范。
-                  3. **drawio-architecture**：绘制系统架构、部署图、微服务组件的样式规范。
-                  4. **drawio-flowchart**：绘制业务流程、审批流的节点与分支连线规范。
+                  3. **drawio-architecture**：绘制系统架构、部署图、微服务组件的类型规范。
+                  4. **drawio-flowchart**：绘制业务流程、审批流的节点与分支连线类型规范。
                   
                   1. 如果输入是 {"type": "user", ...}，请直接原样输出该 JSON。
                   
-                  2. 如果输入是详细的绘图需求，你需要逐个节点输出，每行一个 JSON 对象：
+                  2. 如果输入是时序图需求（包含参与者生命线、消息时序、激活块），使用旧 XML 协议输出：
+                   
+                     a) 首先输出所有节点，每行格式：
+                       {"type":"drawio_node","id":"2","label":"节点名称","xml":"<mxCell id='2' value='节点名称' style='(从 drawio-sequence 技能中获取样式)' vertex='1' parent='1'><mxGeometry x='100' y='100' width='120' height='60' as='geometry'/></mxCell>"}
+                     
+                     b) 然后输出所有连线，每行格式：
+                       {"type":"drawio_edge","id":"e1","label":"消息标签","source":"2","target":"3","xml":"<mxCell id='e1' value='消息标签' style='(从 drawio-sequence 技能中获取连线样式)' edge='1' source='2' target='3' parent='1'><mxGeometry relative='1' as='geometry'/></mxCell>"}
+                     
+                     c) 最后输出完整 XML 兜底：
+                       {"type":"drawio_done","content":"<mxGraphModel><root><mxCell id='0'/><mxCell id='1' parent='0'/>...全部节点和连线...</root></mxGraphModel>"}
                   
-                    输出格式规范（严格遵守，每行一个 JSON，不要输出其他任何内容）：
-                  
-                    a) 首先输出所有节点，每行格式：
-                      {"type":"drawio_node","id":"2","label":"节点名称","xml":"<mxCell id='2' value='节点名称' style='(从相应的技能中获取样式)' vertex='1' parent='1'><mxGeometry x='100' y='100' width='120' height='60' as='geometry'/></mxCell>"}
-                  
-                    b) 然后输出所有连线，每行格式：
-                      {"type":"drawio_edge","id":"e1","label":"连线标签","source":"2","target":"3","xml":"<mxCell id='e1' value='连线标签' style='(从相应的技能中获取连线样式)' edge='1' source='2' target='3' parent='1'><mxGeometry relative='1' as='geometry'/></mxCell>"}
-                  
-                    c) 最后输出完整 XML 兜底：
-                      {"type":"drawio_done","content":"<mxGraphModel><root><mxCell id='0'/><mxCell id='1' parent='0'/><mxCell id='2' .../>...全部节点和连线...</root></mxGraphModel>"}
-                  
-                  3. 设计要求：
-                    - 务必参考指定的 skills 赋予合适的节点与连线 style
-                    - 【严格网格布局】：请严格采用数学坐标计算节点位置，切勿随意设定 x/y。
-                       * 起始坐标为 x=100, y=100。
-                       * 同一列的节点，x 坐标相同，y 坐标依次递增（如 100, 250, 400）。
-                       * 同一行的节点，y 坐标相同，x 坐标依次递增（如 100, 300, 500）。
-                    - 【安全间距】：横向间距 >= 150，纵向间距 >= 120，坚决避免任何节点重叠！
-                    - 所有 mxCell 的 id 必须唯一且递增（从2开始）
-                    - parent 固定为 '1'（除非是子节点如时序图的 activation）
+                  3. 其他所有图表（流程图、架构图、类图、用例图等），输出单个 JSON 对象描述图形结构，
+                     格式（严格遵守，不要输出其他任何内容）：
+                     {"type":"drawio_graph","nodes":[{"id":"n1","label":"节点名称","kind":"节点类型"}],"edges":[{"source":"n1","target":"n2","label":"连线标签","kind":"连线类型"}]}
+                     
+                     其中：
+                     - 节点类型 kind 从对应技能规范中选取，例如：
+                       start、end、process、decision、data、document（流程图）；
+                       service、database、queue、client、boundary（架构图）；
+                       class、interface、actor、usecase（UML图）
+                     - 连线类型 kind 可省略，可选：default、async、data、call、inherit、implement、associate、aggregate、compose、depend
                   
                   4. 关键约束：
-                    - 每个 JSON 必须在一行内输出，不要换行
-                    - JSON 之间用换行符分隔
-                    - 不要输出任何 JSON 之外的文字说明
-                    - drawio_done 中的 content 字段必须是完整的、可直接加载的 Draw.io XML
+                    - 除时序图外，严禁输出任何 XML、坐标（x/y）或样式（style）信息，系统会自动布局和渲染
+                    - 节点只包含 id、label、kind 三个字段；连线只包含 source、target、label、kind
+                    - 所有连线的 source/target 必须引用存在的节点 id；节点 id 必须唯一
+                    - drawio_graph 必须在一行内输出，不要换行
+                    - 不要输出 JSON 之外的任何文字说明
                 output-key: draft_diagram
               
               # 3. 检查与优化智能体
               - name: agent_reviewer
-                description: 检查绘图结果，确保无连线交叉等问题，优化布局并格式化最终输出。
+                description: 检查图形结构 JSON（drawio_graph）的节点引用与类型选用，修正后完整输出；旧 XML 格式（时序图）保持原审查逻辑。
                 instruction: |
                   你是一个图表质量检查员。请审查输入 {draft_diagram}：
                   
                   1. 如果输入是 {"type": "user", ...}，请直接原样输出。
                   
-                  2. 如果输入包含多行 JSON（drawio_node / drawio_edge / drawio_done）：
+                  2. 如果输入是 {"type":"drawio_graph",...} JSON：
+                    - 检查所有 edges 的 source/target 是否指向存在的节点 id，删除或修正悬空引用
+                    - 检查节点 id 是否唯一，去除重复节点
+                    - 检查节点 label 是否为空，为空时用简短名称补全
+                    - 检查节点 kind 与连线 kind 的选用是否符合图表语义（参考绘图技能规范），不当处修正
+                    - 不要添加坐标（x/y）、XML 或 style 字段
+                    - 修正后输出完整的 drawio_graph JSON（与输入结构一致：type/nodes/edges）；如无需修正则原样输出
+                    - 输出必须是单行 JSON，不得输出 JSON 之外的任何文字说明
+                  
+                  3. 如果输入是旧格式（drawio_node / drawio_edge / drawio_done 多行 JSON 或纯 XML，通常为时序图）：
                     - 逐行解析每个 JSON
-                    - 检查所有节点的布局：是否有重叠、坐标是否合理
                     - 检查连线的 source/target 是否指向存在的节点 id
+                    - 检查节点布局：是否有重叠、坐标是否合理，如有则调整 x/y（保持相对位置逻辑不变）
                     - 检查 XML 语法是否正确，严禁输出残缺或非法的 XML 标签
-                    - 如果发现布局问题，调整节点的 x/y 坐标（保持相对位置逻辑不变，只修正重叠和交叉）
-                    - 【极其重要】：不要输出重复的节点或连线！只需要将修正过后的所有节点和连线重新输出一遍即可，以替代原来的图表。
-                    - 最终输出必须严格符合以下格式，每行一个 JSON：
+                    - 【极其重要】：不要输出重复的节点或连线！只需要将修正过后的所有节点和连线重新输出一遍
+                    - 最终输出保持旧格式，每行一个 JSON：
                       a) 先输出所有的节点：{"type":"drawio_node","id":"2","label":"...","xml":"<mxCell .../>"}
                       b) 再输出所有的连线：{"type":"drawio_edge","id":"e1","label":"...","source":"2","target":"3","xml":"<mxCell .../>"}
                       c) 最后输出完整兜底：{"type":"drawio_done","content":"<完整XML>"}
+                    - 严禁在输出的 XML 中包含转义符（如 \"），严禁截断 XML，每个 JSON 必须在一行内
                   
-                  3. 如果输入是纯 XML 代码（旧格式兼容）：
+                  4. 如果输入是纯 XML 代码（旧格式兼容）：
                     - 检查并优化 XML
                     - 输出格式：{"type": "drawio", "content": "完整的XML字符串"}
-                  
-                  4. 关键约束：
-                    - 严禁在输出的 XML 中包含转义符（如 \"），请直接使用正常的引号
-                    - 严禁截断 XML，确保每个标签正确闭合
-                    - 每个 JSON 必须在一行内输出，绝不能跨行
-                    - 不要输出 JSON 之外的文字说明
-                    - drawio_done 中的 content 必须是完整可加载的 XML
                 output-key: final_result
             
             agent-workflows:

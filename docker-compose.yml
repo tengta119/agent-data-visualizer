@@ -23,7 +23,8 @@ services:
       ALL_PROXY: ${ALL_PROXY:-http://host.docker.internal:7897}
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,host.docker.internal}
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1024m}
-      COMMAND_EXECUTION_POLICY_REMOTE_ALLOWED_HOSTS: ${COMMAND_EXECUTION_POLICY_REMOTE_ALLOWED_HOSTS:}
+      OPENAI_KEY: ${OPENAI_KEY:-}
+      COMMAND_EXECUTION_POLICY_REMOTE_ALLOWED_HOSTS: ${COMMAND_EXECUTION_POLICY_REMOTE_ALLOWED_HOSTS:-}
     security_opt:
       - no-new-privileges:true
     cap_drop:
