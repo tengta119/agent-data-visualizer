@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import io.reactivex.rxjava3.disposables.Disposable;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
 import top.lbwxxc.ai.api.IAgentService;
@@ -11,6 +12,13 @@ import top.lbwxxc.ai.api.dto.*;
 import top.lbwxxc.ai.api.response.Response;
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
 import top.lbwxxc.ai.domain.agent.service.IChatService;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContext;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContextHolder;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalDecision;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalDecisionEvent;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalResolveResult;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalResolveStatus;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalService;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamResponseDTO;
 import top.lbwxxc.ai.types.enums.ResponseCode;
@@ -20,6 +28,7 @@ import javax.annotation.Resource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
@@ -43,6 +52,12 @@ public class AgentServiceController implements IAgentService {
 
     @Resource
     private AgentStreamBridge agentStreamBridge;
+
+    @Resource
+    private CommandApprovalService commandApprovalService;
+
+    @Resource
+    private ApplicationEventPublisher applicationEventPublisher;
 
     private static final Pattern DRAWIO_XML_PATTERN = Pattern.compile("(?s)(<mxfile[\\s\\S]*?</mxfile>|<mxGraphModel[\\s\\S]*?</mxGraphModel>)");
 
@@ -177,50 +192,67 @@ public class AgentServiceController implements IAgentService {
             final String currentRequestId = requestId;
             agentStreamBridge.register(currentSessionId, currentRequestId, emitter);
 
+            // 请求执行上下文：只在已验证为同线程的执行链内通过 ThreadLocal 传递，
+            // 设置与清理必须位于同一个 runAsync 执行体内（不能在 Controller 线程设置后期待自动传播）。
+            CommandExecutionContext executionContext = new CommandExecutionContext(
+                    currentRequestId, requestDTO.getAgentId(), requestDTO.getUserId(), currentSessionId);
+
             CompletableFuture.runAsync(() -> {
-                Disposable streamDisposable = chatService.handleMessageStream(requestDTO.getAgentId(), requestDTO.getUserId(), currentSessionId, currentRequestId, requestDTO.getMessage())
-                        .subscribe(
-                                event -> {
-                                    String content = event.stringifyContent();
-                                    if (StringUtils.isNotBlank(content)) {
-                                        finalResultRef.set(content);
-                                    }
-                                    AgentStreamResponseDTO tmp = AgentStreamResponseDTO.log(currentSessionId, currentRequestId, "tmp", content);
-                                    agentStreamBridge.publish(tmp);
-                                },
-                                throwable -> {
-                                    log.error("流式对话失败 sessionId:{} requestId:{}", currentSessionId, currentRequestId, throwable);
-                                    sendStreamError(currentRequestId, throwable);
-                                    cleanupStream(cleaned, currentRequestId, streamDisposableRef.get());
-                                    emitter.completeWithError(throwable);
-                                },
-                                () -> {
-                                    try {
-                                        ChatResponseDTO responseDTO = parseChatResponse(finalResultRef.get(), finalResultRef.get());
-                                        AgentStreamResponseDTO agentStreamResponseDTO = AgentStreamResponseDTO.builder()
-                                                .type("result")
-                                                .stage(StringUtils.defaultIfBlank(responseDTO.getType(), "user"))
-                                                .sessionId(currentSessionId)
-                                                .requestId(currentRequestId)
-                                                .content(responseDTO.getContent())
-                                                .timestamp(System.currentTimeMillis())
-                                                .build();
-
-                                        agentStreamBridge.publish(agentStreamResponseDTO);
-                                        agentStreamBridge.publishDone(currentSessionId, currentRequestId, "completed");
-                                        emitter.complete();
-
-                                        log.info("Agent 最终输出结果 {}", agentStreamResponseDTO);
-                                    } catch (Exception e) {
-                                        log.error("流式结果组装失败 sessionId:{} requestId:{}", currentSessionId, currentRequestId, e);
-                                        sendStreamError(currentRequestId, e);
-                                        emitter.completeWithError(e);
-                                    } finally {
+                try {
+                    CommandExecutionContextHolder.set(executionContext);
+                    // 完整生命周期等待：订阅结束后若仍有余留事件/工具调用，ThreadLocal 不允许提前清理。
+                    CountDownLatch streamTerminated = new CountDownLatch(1);
+                    Disposable streamDisposable = chatService.handleMessageStream(requestDTO.getAgentId(), requestDTO.getUserId(), currentSessionId, currentRequestId, requestDTO.getMessage())
+                            .doFinally(streamTerminated::countDown)
+                            .subscribe(
+                                    event -> {
+                                        String content = event.stringifyContent();
+                                        if (StringUtils.isNotBlank(content)) {
+                                            finalResultRef.set(content);
+                                        }
+                                        AgentStreamResponseDTO tmp = AgentStreamResponseDTO.log(currentSessionId, currentRequestId, "tmp", content);
+                                        agentStreamBridge.publish(tmp);
+                                    },
+                                    throwable -> {
+                                        log.error("流式对话失败 sessionId:{} requestId:{}", currentSessionId, currentRequestId, throwable);
+                                        sendStreamError(currentRequestId, throwable);
                                         cleanupStream(cleaned, currentRequestId, streamDisposableRef.get());
+                                        emitter.completeWithError(throwable);
+                                    },
+                                    () -> {
+                                        try {
+                                            ChatResponseDTO responseDTO = parseChatResponse(finalResultRef.get(), finalResultRef.get());
+                                            AgentStreamResponseDTO agentStreamResponseDTO = AgentStreamResponseDTO.builder()
+                                                    .type("result")
+                                                    .stage(StringUtils.defaultIfBlank(responseDTO.getType(), "user"))
+                                                    .sessionId(currentSessionId)
+                                                    .requestId(currentRequestId)
+                                                    .content(responseDTO.getContent())
+                                                    .timestamp(System.currentTimeMillis())
+                                                    .build();
+
+                                            agentStreamBridge.publish(agentStreamResponseDTO);
+                                            agentStreamBridge.publishDone(currentSessionId, currentRequestId, "completed");
+                                            emitter.complete();
+
+                                            log.info("Agent 最终输出结果 {}", agentStreamResponseDTO);
+                                        } catch (Exception e) {
+                                            log.error("流式结果组装失败 sessionId:{} requestId:{}", currentSessionId, currentRequestId, e);
+                                            sendStreamError(currentRequestId, e);
+                                            emitter.completeWithError(e);
+                                        } finally {
+                                            cleanupStream(cleaned, currentRequestId, streamDisposableRef.get());
+                                        }
                                     }
-                                }
-                        );
-                streamDisposableRef.set(streamDisposable);
+                            );
+                    streamDisposableRef.set(streamDisposable);
+                    streamTerminated.await();
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                } finally {
+                    // Agent 执行线程的 finally 中 remove ThreadLocal；异常、超时、取消和正常完成都不能残留。
+                    CommandExecutionContextHolder.clear();
+                }
             });
         } catch (Exception e) {
             log.error("流式对话失败", e);
@@ -232,6 +264,84 @@ public class AgentServiceController implements IAgentService {
         emitter.onError(error -> cleanupStream(cleaned, requestIdRef.get(), streamDisposableRef.get()));
 
         return emitter;
+    }
+
+    @Override
+    @RequestMapping(value = "chat_stream/{requestId}/approval", method = RequestMethod.POST)
+    public Response<ChatStreamApprovalResponseDTO> decideChatStreamApproval(
+            @PathVariable("requestId") String requestId,
+            @RequestBody ChatStreamApprovalRequestDTO requestDTO) {
+        try {
+            if (StringUtils.isBlank(requestId)) {
+                return Response.<ChatStreamApprovalResponseDTO>builder()
+                        .code(ResponseCode.ILLEGAL_PARAMETER.getCode())
+                        .info("requestId 不能为空")
+                        .build();
+            }
+            if (requestDTO == null || StringUtils.isBlank(requestDTO.getApprovalId())) {
+                return Response.<ChatStreamApprovalResponseDTO>builder()
+                        .code(ResponseCode.ILLEGAL_PARAMETER.getCode())
+                        .info("approvalId 不能为空")
+                        .build();
+            }
+            CommandApprovalDecision decision = CommandApprovalDecision.fromCode(requestDTO.getDecision());
+            if (decision == null) {
+                return Response.<ChatStreamApprovalResponseDTO>builder()
+                        .code(ResponseCode.ILLEGAL_PARAMETER.getCode())
+                        .info("decision 只允许 approve_once 或 reject")
+                        .build();
+            }
+
+            log.info("审批决定提交 requestId:{} approvalId:{} decision:{}",
+                    requestId, requestDTO.getApprovalId(), requestDTO.getDecision());
+            // Controller 不直接访问等待线程或 Future；发布同步事件，监听器调用 CommandApprovalService.resolve。
+            applicationEventPublisher.publishEvent(new CommandApprovalDecisionEvent(
+                    requestId, requestDTO.getApprovalId(), decision));
+            CommandApprovalResolveResult outcome = commandApprovalService.decisionOutcome(
+                    requestId, requestDTO.getApprovalId(), decision);
+            log.info("审批决定处理结果 requestId:{} approvalId:{} outcome:{}",
+                    requestId, requestDTO.getApprovalId(), outcome.getStatus());
+
+            ChatStreamApprovalResponseDTO responseDTO = new ChatStreamApprovalResponseDTO();
+            responseDTO.setRequestId(requestId);
+            responseDTO.setApprovalId(requestDTO.getApprovalId());
+            responseDTO.setStatus(statusText(outcome.getStatus()));
+            return Response.<ChatStreamApprovalResponseDTO>builder()
+                    .code(ResponseCode.SUCCESS.getCode())
+                    .info(ResponseCode.SUCCESS.getInfo())
+                    .data(responseDTO)
+                    .build();
+        } catch (Exception e) {
+            log.error("审批决定处理失败 requestId:{}", requestId, e);
+            return Response.<ChatStreamApprovalResponseDTO>builder()
+                    .code(ResponseCode.UN_ERROR.getCode())
+                    .info(ResponseCode.UN_ERROR.getInfo())
+                    .build();
+        }
+    }
+
+    private String statusText(CommandApprovalResolveStatus status) {
+        if (status == null) {
+            return "not_applied";
+        }
+        switch (status) {
+            case APPROVED:
+                return "approved";
+            case REJECTED:
+                return "rejected";
+            case EXPIRED:
+                return "expired";
+            case CANCELLED:
+                return "cancelled";
+            case ALREADY_RESOLVED:
+                return "already_resolved";
+            case NOT_FOUND:
+                return "not_found";
+            case REQUEST_MISMATCH:
+                return "request_mismatch";
+            default:
+                return "not_applied";
+        }
     }
 
     private ChatResponseDTO parseChatResponse(String result, String fallbackContent) {
@@ -385,6 +495,11 @@ public class AgentServiceController implements IAgentService {
             return;
         }
 
+        // onCompletion/onTimeout/onError/客户端断开统一先取消当前请求仍处于 PENDING 的审批；
+        // 清理幂等，正常完成时没有待审批记录也必须安全。ThreadLocal 只能在 Agent 执行线程的 finally 中清理。
+        if (StringUtils.isNotBlank(requestId)) {
+            commandApprovalService.cancelByRequest(requestId);
+        }
         if (streamDisposable != null && !streamDisposable.isDisposed()) {
             streamDisposable.dispose();
         }

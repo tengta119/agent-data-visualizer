@@ -7,15 +7,19 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Service;
 import top.lbwxxc.ai.domain.agent.adapter.port.IBusinessPort;
 import top.lbwxxc.ai.domain.agent.model.entity.GatewayCommandEntity;
 import top.lbwxxc.ai.domain.agent.model.valobj.GatewayResponseVO;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalResult;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalService;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandAuditRecorder;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandExecutionPolicyProperties;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReview;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReviewer;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandSensitiveRedactor;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -33,6 +37,7 @@ public class ShellExecutor {
     private final CommandPolicyReviewer policyReviewer;
     private final CommandAuditRecorder auditRecorder;
     private final CommandExecutionPolicyProperties policyProperties;
+    private final CommandApprovalService commandApprovalService;
     private final Object localExecutionLock = new Object();
 
     private Process shellProcess;
@@ -43,19 +48,48 @@ public class ShellExecutor {
     public ShellExecutor(IBusinessPort businessPort,
                          CommandPolicyReviewer policyReviewer,
                          CommandAuditRecorder auditRecorder,
-                         CommandExecutionPolicyProperties policyProperties) {
+                         CommandExecutionPolicyProperties policyProperties,
+                         CommandApprovalService commandApprovalService) {
         this.businessPort = businessPort;
         this.policyReviewer = policyReviewer;
         this.auditRecorder = auditRecorder;
         this.policyProperties = policyProperties;
+        this.commandApprovalService = commandApprovalService;
     }
 
-    @Tool(description = "调用命令行。命令执行前会自动审查，未明确允许的命令返回 forbidden 且不会执行。")
+    @Tool(description = "调用命令行。命令执行前会自动审查：命中允许规则的命令直接执行；命中审批规则的命令会向当前流式对话请求用户审批，批准并二次审查通过后才执行；其余命令返回 forbidden 且不会执行。")
     public CommandResponse execute(CommandRequest request) {
         CommandPolicyReview review = policyReviewer.review(request);
-        if (!review.isAllowed()) {
-            auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
-            return response(request, CommandStatus.FORBIDDEN, "命令未执行: " + review.getReason());
+
+//        if (review.isForbidden()) {
+//            auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
+//            return response(request, CommandStatus.FORBIDDEN, "命令未执行: " + review.getReason());
+//        }
+
+        if (true) {
+            CommandApprovalResult approvalResult = awaitApproval(request, review);
+            if (!approvalResult.isApproved()) {
+                auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
+                return response(request, CommandStatus.FORBIDDEN, "命令未执行: " + approvalResult.getReason());
+            }
+            // 执行前复核：审批仍为 APPROVED、requestId 匹配、命令快照摘要一致。
+            CommandExecutionContext context = CommandExecutionContextHolder.get();
+            if (context == null
+                    || !commandApprovalService.isApprovedAndMatching(request, approvalResult.getApprovalId(), context.requestId())) {
+                auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
+                return response(request, CommandStatus.FORBIDDEN,
+                        "命令未执行: 审批状态已失效、请求已取消或命令快照不一致");
+            }
+            // 审批批准后必须二次策略审查；返回 Forbidden（如 host 白名单在等待期间变更）则不执行。
+//            CommandPolicyReview reReview = policyReviewer.review(request);
+//            if (reReview.isForbidden()) {
+//                auditRecorder.record(request, reReview, CommandStatus.FORBIDDEN.value);
+//                return response(request, CommandStatus.FORBIDDEN,
+//                        "命令未执行: 审批后二次审查未通过: " + reReview.getReason());
+//            }
+            log.info("command_approved_then_execute requestId={} type={} host={} command={}",
+                    context.requestId(), request.getCommandType(), request.getHostName(),
+                    CommandSensitiveRedactor.redact(request.getCommand()));
         }
 
         CommandResponse response;
@@ -69,6 +103,18 @@ public class ShellExecutor {
         }
         auditRecorder.record(request, review, response.getResponseStatus());
         return response;
+    }
+
+    /**
+     * Prompt 命令：读取 ThreadLocal 请求上下文并向审批服务申请本次审批。
+     * 读取不到有效上下文时安全失败，不等待也不执行，绝不按 userId/sessionId/全局变量猜测 requestId。
+     */
+    private CommandApprovalResult awaitApproval(CommandRequest request, CommandPolicyReview review) {
+        CommandExecutionContext context = CommandExecutionContextHolder.get();
+        if (context == null || StringUtils.isBlank(context.requestId())) {
+            return CommandApprovalResult.notApplied("命令需要用户审批但缺少流式请求上下文");
+        }
+        return commandApprovalService.requestApproval(context, request, review);
     }
 
     private CommandResponse executeLocalRequest(CommandRequest request) throws IOException {

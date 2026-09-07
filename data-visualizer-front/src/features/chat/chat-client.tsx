@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import AgentDrawIoPanel from "@/src/components/agent-drawio-panel";
+import { useMounted } from "@/src/hooks/use-mounted";
 import {
   chatWithAgent,
   createAgentSession,
@@ -356,6 +357,7 @@ export default function ChatClient({
   const router = useRouter();
   const chatRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mounted = useMounted();
   const [agents, setAgents] = useState(initialAgents);
   const [selectedAgentId, setSelectedAgentId] = useState(
     initialAgents[0]?.agentId ?? "",
@@ -845,7 +847,7 @@ export default function ChatClient({
             <div className="surface-panel flex h-[56px] min-w-[210px] flex-col justify-center rounded-[18px] border border-white/82 px-4">
               <b className="block text-xs leading-4 text-[#213c61]">{userId}</b>
               <span className="mt-0.5 block text-xs leading-4 text-[var(--muted-soft)]">
-                {loginTs ? `登录于 ${formatTime(loginTs)}` : "已登录"}
+                {loginTs && mounted ? `登录于 ${formatTime(loginTs)}` : "已登录"}
               </span>
             </div>
 

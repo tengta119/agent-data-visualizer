@@ -13,3 +13,10 @@ export const AGENT_API_PATHS = {
 export function buildApiUrl(path: string) {
   return `${API_BASE}${path}`;
 }
+
+/**
+ * 审批决定接口相对路径：POST /api/v1/chat_stream/{requestId}/approval
+ */
+export function chatStreamApprovalPath(requestId: string) {
+  return `${AGENT_API_PATHS.chatStream}/${encodeURIComponent(requestId)}/approval`;
+}

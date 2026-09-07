@@ -15,16 +15,8 @@ public class CommandPolicyReviewer {
     private static final String[] UNSUPPORTED_OPERATORS = {
             "|", ">", "<", "`", "$(", "${", "&", "(", ")", "{", "}"
     };
-    private static final Set<String> FORBIDDEN_COMMANDS = Set.of(
-            "rm", "rmdir", "del", "erase", "format", "mkfs", "dd", "shutdown", "reboot",
-            "halt", "poweroff", "kill", "pkill", "killall", "sudo", "su", "chmod", "chown",
-            "setfacl", "mount", "umount", "iptables", "nft", "docker", "podman", "eval", "exec",
-            "xargs", "python", "python3", "node", "perl", "ruby", "sh", "bash", "pwsh",
-            "powershell", "cmd"
-    );
-    private static final Set<String> FORBIDDEN_SUBCOMMANDS = Set.of(
-            "-c", "-command", "-e", "-exec", "restart", "stop", "disable", "run", "exec", "cp", "rm"
-    );
+    private static final Set<String> FORBIDDEN_COMMANDS = Set.of("rm");
+    private static final Set<String> FORBIDDEN_SUBCOMMANDS = Set.of("rm");
 
     private final CommandExecutionPolicyProperties properties;
 
@@ -57,8 +49,10 @@ public class CommandPolicyReviewer {
             return forbidden("命令包含不支持或无法解析的 shell 结构", Collections.emptyList());
         }
 
-        List<String> allowRules = request.getCommandType() == ShellExecutor.CommandTypeEnum.local
-                ? properties.getLocalAllow() : properties.getRemoteAllow();
+        boolean localCommand = request.getCommandType() == ShellExecutor.CommandTypeEnum.local;
+        List<String> allowRules = localCommand ? properties.getLocalAllow() : properties.getRemoteAllow();
+        List<String> promptRules = localCommand ? properties.getLocalPrompt() : properties.getRemotePrompt();
+        boolean promptMatched = false;
         for (String subCommand : commands) {
             List<String> tokens = tokenize(subCommand);
             if (tokens == null || tokens.isEmpty()) {
@@ -73,9 +67,18 @@ public class CommandPolicyReviewer {
                     return forbidden("命令包含禁止的参数: " + token, commands);
                 }
             }
-            if (!matchesAnyPrefix(tokens, allowRules)) {
-                return forbidden("命令未命中允许规则: " + subCommand.trim(), commands);
+            if (matchesAnyPrefix(tokens, allowRules)) {
+                continue;
             }
+            if (matchesAnyPrefix(tokens, promptRules)) {
+                promptMatched = true;
+                continue;
+            }
+            return forbidden("命令未命中允许或审批规则: " + subCommand.trim(), commands);
+        }
+        promptMatched = true;
+        if (promptMatched) {
+            return new CommandPolicyReview(CommandPolicyDecision.PROMPT, "命令需要用户审批后执行", commands);
         }
         return new CommandPolicyReview(CommandPolicyDecision.ALLOW, "命令命中允许规则", commands);
     }

@@ -56,7 +56,13 @@ export type ChatResult = {
   drawio: string | null;
 };
 
-export type ChatStreamMessageType = "log" | "result" | "done" | "error";
+export type ChatStreamMessageType =
+  | "log"
+  | "result"
+  | "done"
+  | "error"
+  | "approval_required"
+  | "approval_resolved";
 
 export type ChatStreamMessage = {
   type: ChatStreamMessageType;
@@ -65,6 +71,29 @@ export type ChatStreamMessage = {
   requestId?: string;
   content?: string;
   timestamp?: number;
+  /** 审批标识；approval_required / approval_resolved 消息携带 */
+  approvalId?: string;
+  /** 命令类型；local/remote */
+  commandType?: string;
+  /** 目标远程终端名称 */
+  hostName?: string;
+  /** 审批原因 */
+  reason?: string;
+  /** 审批过期时间戳（毫秒） */
+  expiresAt?: number;
+};
+
+export type ApprovalDecision = "approve_once" | "reject";
+
+export type ChatStreamApprovalRequest = {
+  approvalId: string;
+  decision: ApprovalDecision;
+};
+
+export type ChatStreamApprovalData = {
+  requestId?: string;
+  approvalId?: string;
+  status?: string;
 };
 
 export type AgentConfigTables = Record<string, JsonValue>;

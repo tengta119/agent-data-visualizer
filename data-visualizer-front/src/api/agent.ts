@@ -1,10 +1,16 @@
-import { AGENT_API_PATHS, buildApiUrl } from "@/src/config/api-config";
+import {
+  AGENT_API_PATHS,
+  buildApiUrl,
+  chatStreamApprovalPath,
+} from "@/src/config/api-config";
 import type {
   ApiResponse,
   AgentConfigTables,
   ChatData,
   ChatResult,
   ChatRequest,
+  ChatStreamApprovalData,
+  ChatStreamApprovalRequest,
   ChatStreamMessage,
   CurrentAgentConfigData,
   CreateSessionData,
@@ -378,4 +384,19 @@ export async function streamChatWithAgent(
   for (const message of trailing.messages) {
     options.onMessage(message);
   }
+}
+
+export async function submitChatStreamApproval(
+  requestId: string,
+  payload: ChatStreamApprovalRequest,
+) {
+  const response = await requestJson<ChatStreamApprovalData>(
+    chatStreamApprovalPath(requestId),
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+
+  return ensureSuccess(response);
 }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { useMounted } from "@/src/hooks/use-mounted";
 import {
   isBackendUnavailableError,
   queryCurrentAgentConfig,
@@ -75,6 +76,7 @@ export default function AgentConfigClient({
   loginTs,
 }: AgentConfigClientProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const mounted = useMounted();
   const [enabled, setEnabled] = useState(initialConfig.enabled);
   const [tablesText, setTablesText] = useState(formatTables(initialConfig.tables));
   const [status, setStatus] = useState(
@@ -200,7 +202,7 @@ export default function AgentConfigClient({
             <div className="surface-panel flex h-[56px] min-w-[210px] flex-col justify-center rounded-[18px] border border-white/82 px-4">
               <b className="block text-xs leading-4 text-[#213c61]">{userId}</b>
               <span className="mt-0.5 block text-xs leading-4 text-[var(--muted-soft)]">
-                {loginTs ? `登录于 ${formatTime(loginTs)}` : "已登录"}
+                {loginTs && mounted ? `登录于 ${formatTime(loginTs)}` : "已登录"}
               </span>
             </div>
 

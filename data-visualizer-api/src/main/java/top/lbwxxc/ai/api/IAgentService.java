@@ -21,4 +21,10 @@ public interface IAgentService {
 
     ResponseBodyEmitter chatStream(ChatRequestDTO requestDTO);
 
+    /**
+     * 审批决定；仅 chat_stream 请求中的待审批命令支持 approve_once/reject。
+     */
+    Response<ChatStreamApprovalResponseDTO> decideChatStreamApproval(String requestId,
+                                                                     ChatStreamApprovalRequestDTO requestDTO);
+
 }

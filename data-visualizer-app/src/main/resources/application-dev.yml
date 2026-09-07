@@ -25,6 +25,17 @@ command:
         - git diff
       # 必须显式配置远程终端名称；空列表表示拒绝所有 remote 命令。
       remote-allowed-hosts: []
+      # 交互审批规则（TASK-003）：命中 allow 的命令直接执行；命中 prompt 的命令
+      # 会向当前流式对话请求用户批准（approve_once/reject），批准并二次审查后才执行。
+      # 默认空列表 = 不产生审批，未命中 allow 的命令仍按 TASK-002 默认拒绝。
+      # 示例：local-prompt:
+      #   - git add
+      #   - git commit
+      #   - git push
+      # remote-prompt: []
+      # 审批等待超时（毫秒）；默认 60000，上限默认 300000，防止无限等待消耗执行线程。
+      # approval-timeout-millis: 60000
+      # approval-timeout-millis-max: 300000
 
 
 # 线程池配置

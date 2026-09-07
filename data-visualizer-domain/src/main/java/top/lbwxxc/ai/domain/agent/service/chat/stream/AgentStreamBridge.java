@@ -13,8 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 智能体流式桥接器
- *
- * @author xiaofuge bugstack.cn @小傅哥
  */
 @Service
 public class AgentStreamBridge {
@@ -68,6 +66,29 @@ public class AgentStreamBridge {
 
     public void publishDone(String sessionId, String requestId, String content) {
         publish(AgentStreamResponseDTO.done(sessionId, requestId, content));
+    }
+
+    /**
+     * 发布审批请求事件；命令必须是已脱敏的展示值。
+     */
+    public void publishApprovalRequired(String requestId, String approvalId, String commandType,
+                                        String hostName, String command, String reason, Long expiresAt) {
+        publish(AgentStreamResponseDTO.approvalRequired(requestId, approvalId, commandType,
+                hostName, command, reason, expiresAt));
+    }
+
+    /**
+     * 发布审批结果事件；status 为 approved/rejected/expired/cancelled 等终态。
+     */
+    public void publishApprovalResolved(String requestId, String approvalId, String status) {
+        publish(AgentStreamResponseDTO.approvalResolved(requestId, approvalId, status));
+    }
+
+    /**
+     * 当前 requestId 是否仍注册了可推送的流式上下文；用于审批创建前的快速失败。
+     */
+    public boolean contains(String requestId) {
+        return StringUtils.isNotBlank(requestId) && requestEmitters.containsKey(requestId);
     }
 
     public void clear(String requestId) {

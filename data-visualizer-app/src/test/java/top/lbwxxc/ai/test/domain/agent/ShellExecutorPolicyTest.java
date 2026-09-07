@@ -5,9 +5,12 @@ import top.lbwxxc.ai.domain.agent.adapter.port.IBusinessPort;
 import top.lbwxxc.ai.domain.agent.model.entity.GatewayCommandEntity;
 import top.lbwxxc.ai.domain.agent.model.valobj.GatewayResponseVO;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.ShellExecutor;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalService;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.PendingApprovalStore;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandAuditRecorder;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandExecutionPolicyProperties;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReviewer;
+import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -36,7 +39,8 @@ class ShellExecutorPolicyTest {
                 businessPort,
                 new CommandPolicyReviewer(properties),
                 new CommandAuditRecorder(),
-                properties
+                properties,
+                new CommandApprovalService(new PendingApprovalStore(), new AgentStreamBridge(), properties, new CommandAuditRecorder())
         );
 
         ShellExecutor.CommandResponse response = executor.execute(new ShellExecutor.CommandRequest(

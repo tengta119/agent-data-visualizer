@@ -4,11 +4,13 @@ import Link from "next/link";
 import { startTransition, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import AgentDrawIoPanel from "@/src/components/agent-drawio-panel";
+import { useMounted } from "@/src/hooks/use-mounted";
 import {
   createAgentSession,
   isBackendUnavailableError,
   extractDrawIoXml,
   streamChatWithAgent,
+  submitChatStreamApproval,
 } from "@/src/api/agent";
 import { COOKIE_NAME, deleteCookieValue, formatTime } from "@/src/utils/cookie";
 import type { AgentConfig, ChatStreamMessage } from "@/src/types/api";
@@ -39,6 +41,59 @@ function createLogItem(message: ChatStreamMessage): StreamLogItem {
   };
 }
 
+type ApprovalEntry = {
+  approvalId: string;
+  requestId: string;
+  commandType?: string;
+  hostName?: string;
+  command: string;
+  reason?: string;
+  expiresAt?: number;
+  status: string;
+  submitting: boolean;
+};
+
+const APPROVAL_STATUS_TEXT: Record<string, string> = {
+  pending: "等待你的决定",
+  submitting: "正在提交决定…",
+  approved: "已批准（允许一次），命令继续执行",
+  rejected: "已拒绝，命令不会执行",
+  expired: "审批已过期，命令不会执行",
+  cancelled: "审批已取消（流式连接断开或已停止）",
+  already_resolved: "该审批已被处理，本次提交无效",
+  not_found: "审批不存在或已被清理",
+  request_mismatch: "requestId 与 approvalId 不匹配",
+  not_applied: "审批未生效",
+  ended: "本次流式请求已结束，审批已失效",
+};
+
+function isApprovalActionable(entry: ApprovalEntry | null) {
+  return entry !== null && entry.status === "pending" && !entry.submitting;
+}
+
+function isApprovalAwaiting(entry: ApprovalEntry | null) {
+  return entry !== null && (entry.status === "pending" || entry.status === "submitting");
+}
+
+function formatApprovalCommand(message: ChatStreamMessage) {
+  const lines = [message.content || ""];
+  if (message.commandType) {
+    lines.push(`目标：${message.commandType}${message.hostName ? ` / ${message.hostName}` : ""}`);
+  }
+  if (message.reason) {
+    lines.push(`原因：${message.reason}`);
+  }
+  return lines.filter((line) => line.trim()).join("\n");
+}
+
+function logItemClass(type: ChatStreamMessage["type"]) {
+  if (type === "error") return "border-[#ffd5d5] bg-[#fff3f3] text-[#8a2d2d]";
+  if (type === "done") return "border-[#dce9ff] bg-[#eef5ff] text-[#26456e]";
+  if (type === "approval_required") return "border-[#ffdca3] bg-[#fff6e3] text-[#6f5412]";
+  if (type === "approval_resolved") return "border-[#c9ecd9] bg-[#eefaf3] text-[#1e6b44]";
+  return "border-white/84 bg-white/72 text-[#2a4568]";
+}
+
 export default function ChatStreamClient({
   apiBase,
   initialAgents,
@@ -48,6 +103,8 @@ export default function ChatStreamClient({
 }: ChatStreamClientProps) {
   const router = useRouter();
   const abortRef = useRef<AbortController | null>(null);
+  const currentRequestIdRef = useRef<string>("");
+  const mounted = useMounted();
   const [agents] = useState(initialAgents);
   const [selectedAgentId, setSelectedAgentId] = useState(
     initialAgents[0]?.agentId ?? "",
@@ -68,6 +125,9 @@ export default function ChatStreamClient({
   const [diagramXml, setDiagramXml] = useState<string | null>(null);
   const [backendIssue, setBackendIssue] = useState<string | null>(
     initialBackendIssue,
+  );
+  const [pendingApproval, setPendingApproval] = useState<ApprovalEntry | null>(
+    null,
   );
 
   const selectedAgent = useMemo(
@@ -91,7 +151,58 @@ export default function ChatStreamClient({
     setResultText("");
     setResultStage("result");
     setDiagramXml(null);
+    setPendingApproval(null);
     setStatusMessage("已重置流式测试状态。");
+  }
+
+  function endPendingApproval() {
+    setPendingApproval((current) =>
+      isApprovalAwaiting(current)
+        ? { ...current, submitting: false, status: "ended" }
+        : current,
+    );
+  }
+
+  async function handleApprovalDecision(decision: "approve_once" | "reject") {
+    if (!pendingApproval || !isApprovalActionable(pendingApproval)) {
+      return;
+    }
+    const target = pendingApproval;
+    setPendingApproval({ ...target, submitting: true, status: "submitting" });
+
+    try {
+      const data = await submitChatStreamApproval(target.requestId, {
+        approvalId: target.approvalId,
+        decision,
+      });
+      const nextStatus = data?.status || (decision === "approve_once" ? "approved" : "rejected");
+      setPendingApproval((current) =>
+        current && current.approvalId === target.approvalId
+          ? { ...current, submitting: false, status: nextStatus }
+          : current,
+      );
+      setLogs((current) => [
+        ...current,
+        {
+          id: `approval-decision-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          type: "approval_resolved",
+          stage: "approval",
+          content: `用户提交：${decision === "approve_once" ? "允许运行" : "拒绝"}（${nextStatus}）`,
+          timestamp: Date.now(),
+        },
+      ]);
+      setStatusMessage(
+        decision === "approve_once" ? "已提交审批决定：允许运行。" : "已提交审批决定：拒绝。",
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      setPendingApproval((current) =>
+        current && current.approvalId === target.approvalId
+          ? { ...current, submitting: false, status: "pending" }
+          : current,
+      );
+      setStatusMessage(`审批提交失败：${reason}`, "error");
+    }
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -117,6 +228,7 @@ export default function ChatStreamClient({
     setResultStage("result");
     setDiagramXml(null);
     setLatestSubmittedMessage(trimmedMessage);
+    setPendingApproval(null);
     setStatusMessage("正在连接流式接口…");
 
     try {
@@ -138,6 +250,58 @@ export default function ChatStreamClient({
         {
           signal: controller.signal,
           onMessage: (streamMessage) => {
+            if (streamMessage.requestId) {
+              currentRequestIdRef.current = streamMessage.requestId;
+            }
+
+            if (streamMessage.type === "approval_required") {
+              if (streamMessage.approvalId) {
+                setPendingApproval({
+                  approvalId: streamMessage.approvalId,
+                  requestId: streamMessage.requestId || currentRequestIdRef.current,
+                  commandType: streamMessage.commandType,
+                  hostName: streamMessage.hostName,
+                  command: streamMessage.content || "",
+                  reason: streamMessage.reason,
+                  expiresAt: streamMessage.expiresAt,
+                  status: "pending",
+                  submitting: false,
+                });
+              }
+              setLogs((current) => [
+                ...current,
+                createLogItem({
+                  type: "approval_required",
+                  stage: "approval",
+                  requestId: streamMessage.requestId,
+                  timestamp: streamMessage.timestamp,
+                  content: formatApprovalCommand(streamMessage),
+                }),
+              ]);
+              setStatusMessage("收到命令审批请求，“允许运行 / 拒绝”按钮已亮起，请决定。");
+              return;
+            }
+
+            if (streamMessage.type === "approval_resolved") {
+              const resolvedStatus = (streamMessage.content || "").toLowerCase();
+              setPendingApproval((current) =>
+                current && current.approvalId === streamMessage.approvalId
+                  ? { ...current, submitting: false, status: resolvedStatus }
+                  : current,
+              );
+              setLogs((current) => [
+                ...current,
+                createLogItem({
+                  type: "approval_resolved",
+                  stage: "approval",
+                  requestId: streamMessage.requestId,
+                  timestamp: streamMessage.timestamp,
+                  content: `审批结果：${APPROVAL_STATUS_TEXT[resolvedStatus] ?? resolvedStatus}`,
+                }),
+              ]);
+              return;
+            }
+
             if (streamMessage.type === "log") {
               setLogs((current) => [...current, createLogItem(streamMessage)]);
               setStatusMessage("正在接收日志流…");
@@ -162,12 +326,14 @@ export default function ChatStreamClient({
             if (streamMessage.type === "done") {
               setLogs((current) => [...current, createLogItem(streamMessage)]);
               setStatusMessage("流式任务完成。");
+              endPendingApproval();
               return;
             }
 
             if (streamMessage.type === "error") {
               setLogs((current) => [...current, createLogItem(streamMessage)]);
               setStatusMessage(streamMessage.content || "流式任务失败", "error");
+              endPendingApproval();
             }
           },
         },
@@ -185,6 +351,7 @@ export default function ChatStreamClient({
     } finally {
       setSending(false);
       abortRef.current = null;
+      endPendingApproval();
     }
   }
 
@@ -192,6 +359,7 @@ export default function ChatStreamClient({
     abortRef.current?.abort();
     abortRef.current = null;
     setSending(false);
+    endPendingApproval();
   }
 
   function handleLogout() {
@@ -243,7 +411,7 @@ export default function ChatStreamClient({
             <div className="surface-panel flex h-[56px] min-w-[210px] flex-col justify-center rounded-[18px] border border-white/82 px-4">
               <b className="block text-xs leading-4 text-[#213c61]">{userId}</b>
               <span className="mt-0.5 block text-xs leading-4 text-[var(--muted-soft)]">
-                {loginTs ? `登录于 ${formatTime(loginTs)}` : "已登录"}
+                {loginTs && mounted ? `登录于 ${formatTime(loginTs)}` : "已登录"}
               </span>
             </div>
 
@@ -294,13 +462,7 @@ export default function ChatStreamClient({
                     logs.map((item) => (
                       <div
                         key={item.id}
-                        className={`rounded-[20px] border px-3 py-3 text-sm ${
-                          item.type === "error"
-                            ? "border-[#ffd5d5] bg-[#fff3f3] text-[#8a2d2d]"
-                            : item.type === "done"
-                              ? "border-[#dce9ff] bg-[#eef5ff] text-[#26456e]"
-                              : "border-white/84 bg-white/72 text-[#2a4568]"
-                        }`}
+                        className={`rounded-[20px] border px-3 py-3 text-sm ${logItemClass(item.type)}`}
                       >
                         <div className="flex items-center justify-between gap-3 text-[11px]">
                           <span className="font-semibold uppercase tracking-[0.18em]">
@@ -394,7 +556,27 @@ export default function ChatStreamClient({
                     className="ring-focus fluent-field min-h-[180px] w-full resize-none rounded-[24px] px-4 py-3 text-sm leading-7 disabled:cursor-not-allowed disabled:opacity-70"
                   />
 
-                  <div className="flex flex-wrap gap-3">
+                  {pendingApproval ? (
+                    <div className="rounded-[20px] border border-[#ffdca3] bg-[#fff6e3] px-4 py-3 text-xs leading-6 text-[#6f5412]">
+                      <span className="font-semibold">待审批命令：</span>
+                      <span className="break-all font-mono">
+                        {pendingApproval.command || "(空)"}
+                      </span>
+                      {pendingApproval.reason ? (
+                        <span className="mt-0.5 block text-[11px] text-[#8a6d2a]">
+                          原因：{pendingApproval.reason}
+                        </span>
+                      ) : null}
+                      <span className="mt-1 block text-[11px] text-[#9a8459]">
+                        状态：{APPROVAL_STATUS_TEXT[pendingApproval.status] ?? pendingApproval.status}
+                        {pendingApproval.expiresAt
+                          ? ` · 过期时间 ${new Date(pendingApproval.expiresAt).toLocaleTimeString()}`
+                          : ""}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="submit"
                       disabled={sending}
@@ -416,6 +598,33 @@ export default function ChatStreamClient({
                       className="hover-lift fluent-secondary cursor-pointer rounded-[20px] px-5 py-3 text-sm font-semibold"
                     >
                       重置
+                    </button>
+                    <span className="mx-1 hidden h-6 w-px bg-[var(--line)] sm:block" />
+                    <button
+                      type="button"
+                      onClick={() => handleApprovalDecision("approve_once")}
+                      disabled={!isApprovalActionable(pendingApproval)}
+                      title={isApprovalActionable(pendingApproval) ? "批准并运行待审批命令" : "等待审批请求"}
+                      className={`cursor-pointer rounded-[20px] px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
+                        isApprovalActionable(pendingApproval)
+                          ? "animate-pulse bg-[#0f6cfd] text-white shadow-[0_0_0_4px_rgba(15,108,253,0.2)] hover:opacity-90"
+                          : "bg-white/60 text-[#9aa7ba] opacity-60"
+                      }`}
+                    >
+                      允许运行
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApprovalDecision("reject")}
+                      disabled={!isApprovalActionable(pendingApproval)}
+                      title={isApprovalActionable(pendingApproval) ? "拒绝执行待审批命令" : "等待审批请求"}
+                      className={`cursor-pointer rounded-[20px] px-5 py-3 text-sm font-semibold transition disabled:cursor-not-allowed ${
+                        isApprovalActionable(pendingApproval)
+                          ? "animate-pulse bg-[#a3312f] text-white shadow-[0_0_0_4px_rgba(163,49,47,0.2)] hover:opacity-90"
+                          : "bg-white/60 text-[#9aa7ba] opacity-60"
+                      }`}
+                    >
+                      拒绝
                     </button>
                   </div>
                 </form>
