@@ -10,6 +10,8 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approva
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandAuditRecorder;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandExecutionPolicyProperties;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReviewer;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.LocalShellRegistry;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.ProcessLocalShellLauncher;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,12 +37,15 @@ class ShellExecutorPolicyTest {
             }
         };
         CommandExecutionPolicyProperties properties = new CommandExecutionPolicyProperties();
+        AgentStreamBridge bridge = new AgentStreamBridge();
         ShellExecutor executor = new ShellExecutor(
                 businessPort,
                 new CommandPolicyReviewer(properties),
                 new CommandAuditRecorder(),
                 properties,
-                new CommandApprovalService(new PendingApprovalStore(), new AgentStreamBridge(), properties, new CommandAuditRecorder())
+                new CommandApprovalService(new PendingApprovalStore(), bridge, properties, new CommandAuditRecorder()),
+                new ProcessLocalShellLauncher(),
+                new LocalShellRegistry(bridge)
         );
 
         ShellExecutor.CommandResponse response = executor.execute(new ShellExecutor.CommandRequest(

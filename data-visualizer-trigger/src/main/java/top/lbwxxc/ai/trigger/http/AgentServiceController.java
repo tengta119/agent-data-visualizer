@@ -14,6 +14,7 @@ import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
 import top.lbwxxc.ai.domain.agent.service.IChatService;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContext;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContextHolder;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.ShellExecutor;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalDecision;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalDecisionEvent;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approval.CommandApprovalResolveResult;
@@ -56,6 +57,9 @@ public class AgentServiceController implements IAgentService {
 
     @Resource
     private CommandApprovalService commandApprovalService;
+
+    @Resource
+    private ShellExecutor shellExecutor;
 
     @Resource
     private ApplicationEventPublisher applicationEventPublisher;
@@ -532,10 +536,12 @@ public class AgentServiceController implements IAgentService {
             return;
         }
 
-        // onCompletion/onTimeout/onError/客户端断开统一先取消当前请求仍处于 PENDING 的审批；
-        // 清理幂等，正常完成时没有待审批记录也必须安全。ThreadLocal 只能在 Agent 执行线程的 finally 中清理。
+        // onCompletion/onTimeout/onError/客户端断开统一先取消当前请求仍处于 PENDING 的审批，
+        // 并销毁该请求独立持有的本地 Shell（ADR-004）；两项清理都幂等，正常完成时也必须安全。
+        // ThreadLocal 只能在 Agent 执行线程的 finally 中清理；Shell 的读写句柄仍由 ShellExecutor 专用线程持有。
         if (StringUtils.isNotBlank(requestId)) {
             commandApprovalService.cancelByRequest(requestId);
+            shellExecutor.closeRequestShell(requestId);
         }
         if (streamDisposable != null && !streamDisposable.isDisposed()) {
             streamDisposable.dispose();

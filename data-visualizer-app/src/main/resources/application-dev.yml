@@ -46,6 +46,12 @@ command:
       local-execution-timeout-millis-max: 300000
       # 本地 Shell 交互专用单线程执行器的有界队列容量；队列满时返回 unavailable。
       local-execution-queue-capacity: 64
+      # 存活本地 Shell 进程数量上限（每个 Shell 对应一次请求/一条无上下文命令）。
+      # 达到上限时按 LRU 淘汰最久未使用的空闲 Shell；无法淘汰时命令返回 unavailable。
+      max-concurrent-shells: 8
+      # 本地 Shell 空闲回收阈值（毫秒，默认 20 分钟，与流式 emitter 超时对齐）。
+      # 只回收“超过阈值、当前空闲且其请求已不再活跃”的 Shell；回收会丢失该 Shell 的 cd/环境变量。
+      shell-idle-timeout-millis: 1200000
 
 
 # 线程池配置

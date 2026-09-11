@@ -16,6 +16,8 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approva
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandAuditRecorder;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandExecutionPolicyProperties;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReviewer;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.LocalShellRegistry;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.ProcessLocalShellLauncher;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 
 import java.util.List;
@@ -93,7 +95,9 @@ class ShellExecutorApprovalTest {
                 new CommandPolicyReviewer(properties),
                 new CommandAuditRecorder(),
                 properties,
-                approvalService
+                approvalService,
+                new ProcessLocalShellLauncher(),
+                new LocalShellRegistry(bridge)
         );
         return executor;
     }

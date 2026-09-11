@@ -1,5 +1,6 @@
 package top.lbwxxc.ai.test.domain.agent;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.Assumptions;
@@ -15,6 +16,8 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approva
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandAuditRecorder;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandExecutionPolicyProperties;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReviewer;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.LocalShellRegistry;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.ProcessLocalShellLauncher;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 
 import java.io.IOException;
@@ -36,6 +39,17 @@ class ShellExecutorLocalExecutionTest {
     private final AutoApprovingAgentStreamBridge bridge = new AutoApprovingAgentStreamBridge();
     private final CommandApprovalService approvalService =
             new CommandApprovalService(store, bridge, properties, new CommandAuditRecorder());
+
+    private ShellExecutor executor;
+
+    @AfterEach
+    void tearDown() {
+        CommandExecutionContextHolder.clear();
+        if (executor != null) {
+            executor.shutdown();
+            executor = null;
+        }
+    }
 
     /**
      * 当前实现下所有命令都会进入审批流程，因此测试用自动批准桥接器把审批短路，
@@ -71,27 +85,29 @@ class ShellExecutorLocalExecutionTest {
     void hangingLocalCommandTimesOutAndFollowingCommandStillWorks() throws Exception {
         Assumptions.assumeTrue(localShellAvailable(), "当前环境没有可用的本地 Shell，跳过本地执行测试");
         properties.setLocalExecutionTimeoutMillis(30_000L);
-        ShellExecutor executor = newExecutor();
+        newExecutor();
 
-        // 预热：先启动长期 Shell，避免把 Shell 启动耗时算进后面的超时
-        assertEquals("success", executeWithContext(executor, "req-warmup", "pwd").getResponseStatus());
+        // 预热：先用同一请求的一条普通命令启动该请求的 Shell，避免把 Shell 启动耗时算进后面的超时
+        assertEquals("success", executeWithContext(executor, "req-1", "pwd").getResponseStatus());
 
         properties.setLocalExecutionTimeoutMillis(1_000L);
         long start = System.currentTimeMillis();
-        ShellExecutor.CommandResponse timedOut = executeWithContext(executor, "req-hang", hangCommand());
+        ShellExecutor.CommandResponse timedOut = executeWithContext(executor, "req-1", hangCommand());
         long elapsed = System.currentTimeMillis() - start;
 
         assertEquals("timeout", timedOut.getResponseStatus());
         assertTrue(elapsed < 30_000, "挂死命令不应长期占用调用线程，实际耗时 " + elapsed + "ms");
+        assertEquals(0, executor.localShellCount(), "超时后该请求的 Shell 必须被销毁");
 
-        // 超时已强制销毁并重建本地 Shell：后续命令必须还能执行，不能被挂死命令永久阻塞执行器
+        // 超时已销毁该请求的 Shell：后续命令必须能惰性重建并正常执行，不能被挂死命令永久阻塞执行器
         properties.setLocalExecutionTimeoutMillis(30_000L);
-        assertEquals("success", executeWithContext(executor, "req-next", "pwd").getResponseStatus());
+        assertEquals("success", executeWithContext(executor, "req-1", "pwd").getResponseStatus());
+        assertEquals(1, executor.localShellCount());
     }
 
     @Test
     void localCommandAfterShutdownIsRefusedOnCallerThread() {
-        ShellExecutor executor = newExecutor();
+        newExecutor();
         executor.shutdown();
 
         ShellExecutor.CommandResponse response = executeWithContext(executor, "req-1", "pwd");
@@ -100,8 +116,9 @@ class ShellExecutorLocalExecutionTest {
     }
 
     private ShellExecutor newExecutor() {
-        return new ShellExecutor(new NoopBusinessPort(), new CommandPolicyReviewer(properties),
-                new CommandAuditRecorder(), properties, approvalService);
+        return executor = new ShellExecutor(new NoopBusinessPort(), new CommandPolicyReviewer(properties),
+                new CommandAuditRecorder(), properties, approvalService,
+                new ProcessLocalShellLauncher(), new LocalShellRegistry(bridge));
     }
 
     private ShellExecutor.CommandResponse executeWithContext(ShellExecutor executor, String requestId, String command) {

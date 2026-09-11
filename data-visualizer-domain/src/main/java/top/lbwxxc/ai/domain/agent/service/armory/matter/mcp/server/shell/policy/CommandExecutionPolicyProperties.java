@@ -14,6 +14,8 @@ public class CommandExecutionPolicyProperties {
 
     private static final long LOCAL_EXECUTION_TIMEOUT_DEFAULT_MILLIS = 30_000L;
     private static final long LOCAL_EXECUTION_TIMEOUT_MAX_DEFAULT_MILLIS = 300_000L;
+    private static final int MAX_CONCURRENT_SHELLS_DEFAULT = 8;
+    private static final long SHELL_IDLE_TIMEOUT_DEFAULT_MILLIS = 1_200_000L;
 
     private int maxCommandLength = 1000;
     private int maxOutputChars = 1024 * 1024;
@@ -87,6 +89,32 @@ public class CommandExecutionPolicyProperties {
      * 超限的命令直接返回 forbidden，不占用 Agent 执行线程等待审批。
      */
     private int maxPendingApprovalsPerRequest = 1;
+
+    /**
+     * 存活本地 Shell 进程数量上限，默认 8。每个 Shell 对应一次请求（或一条无上下文的一次性命令），
+     * 达到上限时按 LRU 淘汰最久未使用的空闲 Shell；无法淘汰时命令返回 unavailable。
+     */
+    private int maxConcurrentShells = MAX_CONCURRENT_SHELLS_DEFAULT;
+
+    /**
+     * 本地 Shell 空闲回收阈值（毫秒），默认 20 分钟，与流式 emitter 超时对齐。
+     * 只回收“超过阈值、当前空闲且其请求已不再活跃”的 Shell，避免打断模型长思考后的后续命令。
+     */
+    private long shellIdleTimeoutMillis = SHELL_IDLE_TIMEOUT_DEFAULT_MILLIS;
+
+    /**
+     * 解析生效的存活 Shell 数量上限；非法值回退默认值，不得解释为“无上限”。
+     */
+    public int resolveMaxConcurrentShells() {
+        return maxConcurrentShells > 0 ? maxConcurrentShells : MAX_CONCURRENT_SHELLS_DEFAULT;
+    }
+
+    /**
+     * 解析生效的空闲回收阈值；非法值回退默认值，不得解释为“永不回收”。
+     */
+    public long resolveShellIdleTimeoutMillis() {
+        return shellIdleTimeoutMillis > 0 ? shellIdleTimeoutMillis : SHELL_IDLE_TIMEOUT_DEFAULT_MILLIS;
+    }
 
     /**
      * 解析生效的本地命令执行超时，按 localExecutionTimeoutMillisMax 夹紧，并对非法值回退默认值。

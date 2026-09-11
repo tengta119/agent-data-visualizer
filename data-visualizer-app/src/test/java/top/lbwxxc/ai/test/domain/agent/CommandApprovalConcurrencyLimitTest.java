@@ -19,6 +19,8 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyDecision;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReview;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.policy.CommandPolicyReviewer;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.LocalShellRegistry;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.ProcessLocalShellLauncher;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 
 import java.util.List;
@@ -202,7 +204,8 @@ class CommandApprovalConcurrencyLimitTest {
 
         AtomicInteger actionCalls = new AtomicInteger();
         ShellExecutor executor = new ShellExecutor(countingBusinessPort(actionCalls),
-                new CommandPolicyReviewer(properties), new CommandAuditRecorder(), properties, service);
+                new CommandPolicyReviewer(properties), new CommandAuditRecorder(), properties, service,
+                new ProcessLocalShellLauncher(), new LocalShellRegistry(bridge));
 
         // 第一个命令进入 PENDING 等待用户决定
         Future<ShellExecutor.CommandResponse> waiting = workerPool.submit(() -> {
