@@ -36,6 +36,16 @@ command:
       # 审批等待超时（毫秒）；默认 60000，上限默认 300000，防止无限等待消耗执行线程。
       # approval-timeout-millis: 60000
       # approval-timeout-millis-max: 300000
+      # 命令审批并发上限：同时处于 PENDING（等待用户决定）的审批数量，分整个 JVM 与单个 requestId 两级。
+      # 超限的命令直接返回 forbidden，不占用 Agent 执行线程等待。
+      max-pending-approvals: 5
+      max-pending-approvals-per-request: 1
+      # 本地命令执行超时（毫秒）：超时后强制销毁并重启本地 Shell，命令返回 timeout；
+      # 避免一条挂死命令永久占用本地 Shell。默认 30000，上限默认 300000。
+      local-execution-timeout-millis: 30000
+      local-execution-timeout-millis-max: 300000
+      # 本地 Shell 交互专用单线程执行器的有界队列容量；队列满时返回 unavailable。
+      local-execution-queue-capacity: 64
 
 
 # 线程池配置

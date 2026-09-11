@@ -50,6 +50,35 @@ public class PendingApprovalStore {
     }
 
     /**
+     * 当前仍处于 PENDING 的审批数量；终态记录不计入。用于“整个 JVM 的审批并发上限”判断。
+     */
+    public int countPending() {
+        int count = 0;
+        for (PendingCommandApproval approval : byApprovalId.values()) {
+            if (approval.isPending()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 指定 requestId 下仍处于 PENDING 的审批数量；终态记录不计入。用于“单请求的审批并发上限”判断。
+     */
+    public int countPendingByRequest(String requestId) {
+        if (requestId == null) {
+            return 0;
+        }
+        int count = 0;
+        for (PendingCommandApproval approval : byApprovalId.values()) {
+            if (requestId.equals(approval.getRequestId()) && approval.isPending()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * 移除指定 requestId 下的全部记录（终态或非终态），幂等。
      */
     public void removeByRequest(String requestId) {

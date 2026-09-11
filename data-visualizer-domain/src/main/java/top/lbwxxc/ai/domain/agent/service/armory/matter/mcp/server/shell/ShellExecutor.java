@@ -2,6 +2,7 @@ package top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import jakarta.annotation.PreDestroy;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -28,19 +29,64 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * 本地/远程命令执行器。
+ *
+ * <p>本地路径并发模型：所有需要写入长期 Shell 的工作只提交到 {@code localShellExecutor}
+ * （corePoolSize=1、maximumPoolSize=1、有界队列、CallerRunsPolicy），调用线程用
+ * {@code Future.get(timeout)} 等待结果，替代原先的 {@code synchronized} 块。由此保证：</p>
+ * <ul>
+ *   <li>同一时刻只有一个线程读写同一个长期 Shell，命令与结束标记不会串线；</li>
+ *   <li>挂死命令不会永久占用本地 Shell：超时后强制销毁 Shell 进程以解除 {@code readLine} 阻塞，
+ *       命令返回 {@code timeout}，执行器随后可以正常处理下一条命令；</li>
+ *   <li>队列满时 CallerRunsPolicy 会在调用线程兜底执行，任务体检测到不是专用执行线程后直接返回
+ *       {@code unavailable}，不会在调用线程上重新引入无超时的 Shell 写入。</li>
+ * </ul>
+ *
+ * <p>remote 路径每次调用创建独立的 {@link GatewayCommandEntity} 与请求 ID，无共享可变状态；
+ * {@code clients} 查询只读取网关在线客户端，不触碰长期 Shell，因此不占用本地执行器。</p>
+ */
 @Slf4j
 @Service
 public class ShellExecutor {
+
+    /**
+     * 本地 Shell 交互专用有界单线程执行器；串行化所有 local 命令，队列满时由 CallerRunsPolicy 兜底。
+     */
+    private final ThreadPoolExecutor localShellExecutor;
+
+    /**
+     * 专用执行线程引用，用于识别 CallerRunsPolicy 兜底执行（非专用线程必须拒绝）。
+     */
+    private final AtomicReference<Thread> shellExecutorThread = new AtomicReference<>();
+
+    /**
+     * Shell 状态字段的互斥与可见性屏障；保证 worker 线程被替换后仍能读到最新状态。
+     */
+    private final ReentrantLock shellStateLock = new ReentrantLock();
+
+    /**
+     * 当前长期 Shell 进程。允许超时路径在锁外销毁它以解除 {@code readLine} 阻塞；
+     * writer/reader/shellName 只在持锁线程内读写，因此不放入本引用。
+     */
+    private final AtomicReference<Process> shellProcessRef = new AtomicReference<>();
 
     private final IBusinessPort businessPort;
     private final CommandPolicyReviewer policyReviewer;
     private final CommandAuditRecorder auditRecorder;
     private final CommandExecutionPolicyProperties policyProperties;
     private final CommandApprovalService commandApprovalService;
-    private final Object localExecutionLock = new Object();
 
-    private Process shellProcess;
     private BufferedWriter writer;
     private BufferedReader reader;
     private String shellName;
@@ -55,6 +101,14 @@ public class ShellExecutor {
         this.auditRecorder = auditRecorder;
         this.policyProperties = policyProperties;
         this.commandApprovalService = commandApprovalService;
+        this.localShellExecutor = new ThreadPoolExecutor(
+                1,
+                1,
+                60L,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(Math.max(1, policyProperties.getLocalExecutionQueueCapacity())),
+                this::newShellExecutorThread,
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     @Tool(description = "调用命令行。命令执行前会自动审查：命中允许规则的命令直接执行；命中审批规则的命令会向当前流式对话请求用户审批，批准并二次审查通过后才执行；其余命令返回 forbidden 且不会执行。")
@@ -95,6 +149,10 @@ public class ShellExecutor {
         CommandResponse response;
         try {
             response = request.getCommandType() == CommandTypeEnum.remote ? executeRemote(request) : executeLocalRequest(request);
+        } catch (LocalCommandUnavailableException exception) {
+            response = response(request, CommandStatus.UNAVAILABLE, exception.getMessage());
+        } catch (LocalCommandTimeoutException exception) {
+            response = response(request, CommandStatus.TIMEOUT, exception.getMessage());
         } catch (IllegalArgumentException exception) {
             response = response(request, CommandStatus.INVALID, exception.getMessage());
         } catch (Exception exception) {
@@ -119,11 +177,143 @@ public class ShellExecutor {
 
     private CommandResponse executeLocalRequest(CommandRequest request) throws IOException {
         if ("clients".equalsIgnoreCase(request.getCommand().trim())) {
+            // clients 只查询网关在线客户端，不触碰长期 Shell 状态，因此不占用本地 Shell 执行器。
             GatewayResponseVO clients = businessPort.queryClients();
             return new CommandResponse("Local", request.getCommand(), normalizeStatus(clients.getStatus()), clients.getMessage());
         }
         String output = executeLocal(request.getCommand());
         return new CommandResponse("Local", request.getCommand(), CommandStatus.SUCCESS.value, output);
+    }
+
+    /**
+     * 本地命令统一提交到有界单线程执行器等待，并用 {@code Future.get(timeout)} 兜底：
+     * 超时后强制销毁 Shell 进程解除 {@code readLine} 阻塞并返回 {@code timeout}，
+     * 因此一条挂死命令不会永久占住本地 Shell，也不会永久占住 Agent 执行线程。
+     */
+    private String executeLocal(String command) throws IOException {
+        long timeoutMillis = policyProperties.resolveLocalExecutionTimeoutMillis();
+        Future<String> future;
+        try {
+            future = localShellExecutor.submit(() -> runLocalShellTask(command));
+        } catch (RejectedExecutionException exception) {
+            throw new LocalCommandUnavailableException("本地命令执行器已关闭，命令未执行");
+        }
+        try {
+            return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            future.cancel(true);
+            forceDestroyShellProcess();
+            throw new LocalCommandTimeoutException(
+                    "本地命令执行超时（" + timeoutMillis + "ms），已强制重启本地 Shell，命令未执行完成");
+        } catch (InterruptedException exception) {
+            future.cancel(true);
+            Thread.currentThread().interrupt();
+            throw new LocalCommandUnavailableException("本地命令执行被中断，命令未执行");
+        } catch (ExecutionException exception) {
+            throw unwrapLocalFailure(exception);
+        }
+    }
+
+    /**
+     * 执行器线程任务体。CallerRunsPolicy 兜底执行发生在调用线程上，此处直接拒绝：
+     * 单写者不变量与 {@code Future.get} 超时语义只在专用执行线程上成立，队列满时宁可快速失败。
+     */
+    private String runLocalShellTask(String command) throws IOException {
+        if (Thread.currentThread() != shellExecutorThread.get()) {
+            throw new LocalCommandUnavailableException("本地命令执行队列已满，命令未执行");
+        }
+        shellStateLock.lock();
+        try {
+            return writeAndReadLocked(command);
+        } finally {
+            shellStateLock.unlock();
+        }
+    }
+
+    private String writeAndReadLocked(String command) throws IOException {
+        ensureShellRunning();
+        String endMarker = "__COMMAND_END_" + UUID.randomUUID().toString().replace("-", "") + "__";
+        try {
+            writer.write(command);
+            writer.newLine();
+            writer.write(markerCommand(endMarker));
+            writer.newLine();
+            writer.flush();
+        } catch (IOException exception) {
+            restartShell();
+            throw exception;
+        }
+
+        StringBuilder output = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            if (line.equals(endMarker)) {
+                return output.toString().trim();
+            }
+            if (output.length() + line.length() + 1 > policyProperties.getMaxOutputChars()) {
+                restartShell();
+                throw new IOException("命令输出超过限制");
+            }
+            output.append(line).append(System.lineSeparator());
+        }
+        restartShell();
+        throw new IOException("本地 Shell 意外终止");
+    }
+
+    private void ensureShellRunning() throws IOException {
+        Process process = shellProcessRef.get();
+        if (process != null && process.isAlive()) {
+            return;
+        }
+        if (process != null) {
+            restartShell();
+        }
+        IOException lastError = null;
+        for (String candidate : shellCandidates()) {
+            try {
+                Process started = new ProcessBuilder(candidate).redirectErrorStream(true).start();
+                shellProcessRef.set(started);
+                writer = new BufferedWriter(new OutputStreamWriter(started.getOutputStream(), StandardCharsets.UTF_8));
+                reader = new BufferedReader(new InputStreamReader(started.getInputStream(), StandardCharsets.UTF_8));
+                shellName = candidate.toLowerCase();
+                log.info("Local command shell started: {}", candidate);
+                return;
+            } catch (IOException exception) {
+                lastError = exception;
+            }
+        }
+        throw new IOException("没有可用的本地 Shell", lastError);
+    }
+
+    /**
+     * 持锁线程内重启：销毁进程并清空 Shell 字段。
+     */
+    private void restartShell() {
+        forceDestroyShellProcess();
+        writer = null;
+        reader = null;
+        shellName = null;
+    }
+
+    /**
+     * 超时路径专用：只销毁当前进程引用以解除 {@code readLine} 阻塞，
+     * 不触碰仅由持锁线程读写的 writer/reader/shellName。
+     */
+    private void forceDestroyShellProcess() {
+        Process process = shellProcessRef.getAndSet(null);
+        if (process != null && process.isAlive()) {
+            process.destroyForcibly();
+        }
+    }
+
+    /**
+     * 创建本地 Shell 专用执行线程；记录引用以便识别 CallerRunsPolicy 的兜底执行。
+     */
+    private Thread newShellExecutorThread(Runnable runnable) {
+        Thread thread = new Thread(runnable, "local-shell-executor");
+        thread.setDaemon(true);
+        shellExecutorThread.set(thread);
+        return thread;
     }
 
     private CommandResponse executeRemote(CommandRequest request) {
@@ -136,50 +326,15 @@ public class ShellExecutor {
                 normalizeStatus(gatewayResponse.getStatus()), gatewayResponse.getMessage());
     }
 
-    private String executeLocal(String command) throws IOException {
-        synchronized (localExecutionLock) {
-            ensureShellRunning();
-            String endMarker = "__COMMAND_END_" + UUID.randomUUID().toString().replace("-", "") + "__";
-            writer.write(command);
-            writer.newLine();
-            writer.write(markerCommand(endMarker));
-            writer.newLine();
-            writer.flush();
-
-            StringBuilder output = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                if (line.equals(endMarker)) break;
-                if (output.length() + line.length() + 1 > policyProperties.getMaxOutputChars()) {
-                    restartShell();
-                    throw new IOException("命令输出超过限制");
-                }
-                output.append(line).append(System.lineSeparator());
-            }
-            if (line == null) {
-                restartShell();
-                throw new IOException("本地 Shell 意外终止");
-            }
-            return output.toString().trim();
+    private IOException unwrapLocalFailure(ExecutionException exception) {
+        Throwable cause = exception.getCause();
+        if (cause instanceof IOException) {
+            return (IOException) cause;
         }
-    }
-
-    private void ensureShellRunning() throws IOException {
-        if (shellProcess != null && shellProcess.isAlive()) return;
-        IOException lastError = null;
-        for (String candidate : shellCandidates()) {
-            try {
-                shellProcess = new ProcessBuilder(candidate).redirectErrorStream(true).start();
-                writer = new BufferedWriter(new OutputStreamWriter(shellProcess.getOutputStream(), StandardCharsets.UTF_8));
-                reader = new BufferedReader(new InputStreamReader(shellProcess.getInputStream(), StandardCharsets.UTF_8));
-                shellName = candidate.toLowerCase();
-                log.info("Local command shell started: {}", candidate);
-                return;
-            } catch (IOException exception) {
-                lastError = exception;
-            }
+        if (cause instanceof RuntimeException) {
+            throw (RuntimeException) cause;
         }
-        throw new IOException("没有可用的本地 Shell", lastError);
+        return new IOException(cause == null ? "本地命令执行失败" : cause.getMessage(), cause);
     }
 
     private String[] shellCandidates() {
@@ -191,14 +346,6 @@ public class ShellExecutor {
     private String markerCommand(String marker) {
         return shellName != null && shellName.contains("powershell") || shellName != null && shellName.contains("pwsh")
                 ? "Write-Output '" + marker + "'" : "printf '%s\\n' '" + marker + "'";
-    }
-
-    private void restartShell() {
-        if (shellProcess != null) shellProcess.destroyForcibly();
-        shellProcess = null;
-        writer = null;
-        reader = null;
-        shellName = null;
     }
 
     private String normalizeStatus(String status) {
@@ -218,6 +365,32 @@ public class ShellExecutor {
         return exception.getMessage() == null ? exception.getClass().getSimpleName() : exception.getMessage();
     }
 
+    @PreDestroy
+    public void shutdown() {
+        localShellExecutor.shutdownNow();
+        forceDestroyShellProcess();
+    }
+
+    /**
+     * 本地命令超时：转换为 {@code timeout} 状态，与普通执行失败区分。
+     */
+    private static class LocalCommandTimeoutException extends IOException {
+
+        LocalCommandTimeoutException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * 本地命令未执行（执行器已关闭、队列满、被中断）：转换为 {@code unavailable} 状态。
+     */
+    private static class LocalCommandUnavailableException extends IOException {
+
+        LocalCommandUnavailableException(String message) {
+            super(message);
+        }
+    }
+
     @Getter
     @AllArgsConstructor
     public enum CommandTypeEnum {
@@ -234,7 +407,9 @@ public class ShellExecutor {
         SUCCESS("success"),
         FAILED("failed"),
         FORBIDDEN("forbidden"),
-        INVALID("invalid");
+        INVALID("invalid"),
+        TIMEOUT("timeout"),
+        UNAVAILABLE("unavailable");
 
         private final String value;
     }

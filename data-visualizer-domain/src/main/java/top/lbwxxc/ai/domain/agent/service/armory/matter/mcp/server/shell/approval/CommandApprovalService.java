@@ -33,6 +33,14 @@ public class CommandApprovalService {
 
     private static final long DEFAULT_TIMEOUT_MILLIS = 60_000L;
     private static final long DEFAULT_TIMEOUT_MAX_MILLIS = 300_000L;
+    private static final int DEFAULT_MAX_PENDING_APPROVALS = 5;
+    private static final int DEFAULT_MAX_PENDING_APPROVALS_PER_REQUEST = 1;
+
+    /**
+     * 审批登记的临界区：并发上限判断与待审批记录写入必须原子完成，
+     * 否则多个并发命令可能同时通过检查而突破上限。
+     */
+    private final Object admissionLock = new Object();
 
     private final PendingApprovalStore store;
     private final AgentStreamBridge agentStreamBridge;
@@ -77,7 +85,17 @@ public class CommandApprovalService {
         PendingCommandApproval approval = new PendingCommandApproval(
                 approvalId, requestId, context.agentId(), context.sessionId(),
                 commandType, hostName, displayCommand, digest, reason, now, now + timeoutMillis);
-        store.save(approval);
+        // 并发上限：整个 JVM 与单个 requestId 两级。超限时直接拒绝，不创建待审批记录、不发送审批事件、
+        // 也不进入等待，因此不会占用 Agent 执行线程。
+        synchronized (admissionLock) {
+            String limitReason = approvalLimitReason(requestId);
+            if (limitReason != null) {
+                auditRecorder.recordApproval("APPROVAL_REJECTED_BY_LIMIT", "-", requestId,
+                        commandType, hostName, displayCommand, limitReason);
+                return CommandApprovalResult.notApplied(limitReason);
+            }
+            store.save(approval);
+        }
         auditRecorder.recordApproval("APPROVAL_REQUESTED", approvalId, requestId,
                 commandType, hostName, displayCommand, reason);
 
@@ -259,6 +277,31 @@ public class CommandApprovalService {
             default:
                 return "审批未完成";
         }
+    }
+
+    /**
+     * 审批并发上限判断，返回 null 表示未超限。
+     *
+     * <p>两级限制：单个 requestId 的 PENDING 数量与整个 JVM 的 PENDING 数量。
+     * 只统计 PENDING：审批进入终态后立即释放槽位，因此同一请求可以先后产生多次审批，
+     * 但不会同时挂起多个等待线程。调用方必须在 {@link #admissionLock} 内调用本方法以保证不超限。</p>
+     */
+    private String approvalLimitReason(String requestId) {
+        int maxPerRequest = resolveLimit(policyProperties.getMaxPendingApprovalsPerRequest(),
+                DEFAULT_MAX_PENDING_APPROVALS_PER_REQUEST);
+        int maxGlobal = resolveLimit(policyProperties.getMaxPendingApprovals(),
+                DEFAULT_MAX_PENDING_APPROVALS);
+        if (store.countPendingByRequest(requestId) >= maxPerRequest) {
+            return "当前请求同时等待审批的命令数量已达上限(" + maxPerRequest + ")，命令未执行";
+        }
+        if (store.countPending() >= maxGlobal) {
+            return "服务同时等待审批的命令数量已达上限(" + maxGlobal + ")，命令未执行";
+        }
+        return null;
+    }
+
+    private int resolveLimit(int configured, int fallback) {
+        return configured > 0 ? configured : fallback;
     }
 
     private long resolveTimeoutMillis() {
