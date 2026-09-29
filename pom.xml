@@ -252,6 +252,7 @@
   </profiles>
   <modules>
     <module>data-visualizer-api</module>
+    <module>data-visualizer-paicli</module>
     <module>data-visualizer-app</module>
     <module>data-visualizer-domain</module>
     <module>data-visualizer-trigger</module>

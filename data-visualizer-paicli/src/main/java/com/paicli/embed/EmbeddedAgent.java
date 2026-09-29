@@ -1,0 +1,94 @@
+package com.paicli.embed;
+
+import com.paicli.agent.Agent;
+import com.paicli.agent.AgentRunException;
+import com.paicli.llm.LlmClient;
+import com.paicli.mcp.protocol.McpToolDescriptor;
+import com.paicli.memory.LongTermMemory;
+import com.paicli.memory.MemoryManager;
+import com.paicli.runtime.CancellationContext;
+import com.paicli.runtime.CancellationToken;
+import com.paicli.tool.ToolRegistry;
+import com.paicli.tool.ToolResultOffloader;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.function.Function;
+
+/** In-process PaiCLI ReAct entry point with an explicit prompt and tool boundary. */
+public final class EmbeddedAgent {
+    private final LlmClient llmClient;
+    private final ToolRegistry tools;
+    private final Agent agent;
+    private final AtomicReference<CancellationToken> currentRun = new AtomicReference<>();
+    private boolean started;
+
+    public EmbeddedAgent(LlmClient llmClient, String trustedSystemInstruction) {
+        this.llmClient = Objects.requireNonNull(llmClient, "llmClient");
+        if (trustedSystemInstruction == null || trustedSystemInstruction.isBlank()) {
+            throw new IllegalArgumentException("trustedSystemInstruction must not be blank");
+        }
+        this.tools = ToolRegistry.restricted();
+        this.tools.setToolResultOffloader(new ToolResultOffloader(
+                Path.of(System.getProperty("user.dir")), false, 32_000));
+        this.agent = new Agent(llmClient, tools,
+                new MemoryManager(llmClient, LongTermMemory.inMemory()), trustedSystemInstruction);
+        this.agent.setReturnFinalResponseWhenStreamed(true);
+    }
+
+    /** Registers a tool explicitly; no PaiCLI built-in tool is registered by default. */
+    public synchronized void registerMcpTool(McpToolDescriptor descriptor, Function<String, String> invoker) {
+        if (started) {
+            throw new IllegalStateException("Cannot change tools after the first turn");
+        }
+        tools.registerMcpTool(descriptor, invoker);
+    }
+
+    public List<LlmClient.Tool> availableTools() {
+        return tools.getToolDefinitions();
+    }
+
+    /** Reuses this Agent's conversation history; concurrent turns are serialized. */
+    public synchronized EmbeddedTurnResult run(String input, String submittedUserInput,
+                                               Consumer<EmbeddedEvent> listener) {
+        if (input == null || input.isBlank()) {
+            throw new IllegalArgumentException("input must not be blank");
+        }
+        started = true;
+        CancellationToken token = new CancellationToken();
+        currentRun.set(token);
+        EmbeddedRenderer renderer = new EmbeddedRenderer(listener);
+        agent.setRenderer(renderer);
+        try (CancellationContext.Scope ignored = CancellationContext.bind(token)) {
+            String result = agent.runExplicitTask(input,
+                    submittedUserInput == null ? input : submittedUserInput);
+            return new EmbeddedTurnResult(result);
+        } catch (AgentRunException error) {
+            EmbeddedTurnException.Kind kind = error.reason() == AgentRunException.Reason.CANCELLED
+                    ? EmbeddedTurnException.Kind.CANCELLED : EmbeddedTurnException.Kind.MODEL_IO;
+            throw new EmbeddedTurnException(kind, error.getMessage(), error);
+        } catch (RuntimeException error) {
+            throw new EmbeddedTurnException(EmbeddedTurnException.Kind.EXECUTION,
+                    "Embedded Agent execution failed", error);
+        } finally {
+            currentRun.compareAndSet(token, null);
+            renderer.close();
+        }
+    }
+
+    public EmbeddedTurnResult run(String input) {
+        return run(input, input, null);
+    }
+
+    /** Can be called from another thread while run() is blocked in a model request. */
+    public void cancel() {
+        CancellationToken token = currentRun.get();
+        if (token != null) {
+            token.cancel();
+            llmClient.cancelInFlightCalls();
+        }
+    }
+}
