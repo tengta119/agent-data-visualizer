@@ -23,6 +23,10 @@ public interface LlmClient {
     default void cancelInFlightCalls() {
     }
 
+    /** Called before a new serialized Agent turn; canceled transport state may be reset here. */
+    default void prepareForRun() {
+    }
+
     default int maxContextWindow() {
         return 128_000;
     }

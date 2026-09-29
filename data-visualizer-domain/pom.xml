@@ -11,10 +11,6 @@
 
     <dependencies>
         <dependency>
-            <groupId>cn.bugstack.wrench</groupId>
-            <artifactId>xfg-wrench-starter-design-framework</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-openai</artifactId>
         </dependency>
@@ -42,6 +38,24 @@
         <dependency>
             <groupId>top.lbwxxc.ai</groupId>
             <artifactId>data-visualizer-types</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>top.lbwxxc.ai</groupId>
+            <artifactId>data-visualizer-paicli</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+        <!-- This upstream JAR bundles old SLF4J/Logback classes. Keep Boot logging ahead of it. -->
+        <dependency>
+            <groupId>cn.bugstack.wrench</groupId>
+            <artifactId>xfg-wrench-starter-design-framework</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
         <!-- https://github.com/spring-ai-community/spring-ai-agent-utils -->
         <dependency>

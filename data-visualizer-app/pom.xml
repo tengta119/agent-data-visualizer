@@ -10,6 +10,9 @@
     <artifactId>data-visualizer-app</artifactId>
 
     <packaging>jar</packaging>
+    <properties>
+        <app.skipTests>true</app.skipTests>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -168,9 +171,9 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>2.6</version>
+                <version>3.5.2</version>
                 <configuration>
-                    <skipTests>true</skipTests>
+                    <skipTests>${app.skipTests}</skipTests>
                     <testFailureIgnore>false</testFailureIgnore>
                     <includes>
                         <include>**/*Test.java</include>

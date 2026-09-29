@@ -177,6 +177,11 @@
       </dependency>
       <dependency>
         <groupId>top.lbwxxc.ai</groupId>
+        <artifactId>data-visualizer-paicli</artifactId>
+        <version>1.0</version>
+      </dependency>
+      <dependency>
+        <groupId>top.lbwxxc.ai</groupId>
         <artifactId>data-visualizer-trigger</artifactId>
         <version>1.0</version>
       </dependency>

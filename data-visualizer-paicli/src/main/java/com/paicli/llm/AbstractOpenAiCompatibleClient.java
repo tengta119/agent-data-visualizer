@@ -108,10 +108,15 @@ public abstract class AbstractOpenAiCompatibleClient implements LlmClient {
 
                 int retryNumber = attempt;
                 long delayMillis = retryPolicy.delayMillis(retryNumber, retryAfterHeader(failure));
+                String failureMessage = failure.getMessage();
+                String key = getApiKey();
+                if (failureMessage != null && key != null && !key.isEmpty()) {
+                    failureMessage = failureMessage.replace(key, "***");
+                }
                 log.warn("LLM request failed before streaming output; retrying provider={} model={} "
                                 + "attempt={}/{} delayMs={} cause={}",
                         getProviderName(), getModelName(), attempt + 1, retryPolicy.maxAttempts(),
-                        delayMillis, failure.getMessage());
+                        delayMillis, failureMessage);
                 sleepBeforeRetry(retryPolicy, delayMillis);
             }
         }
@@ -122,6 +127,11 @@ public abstract class AbstractOpenAiCompatibleClient implements LlmClient {
     public void cancelInFlightCalls() {
         cancellationRequested.set(true);
         httpClient().dispatcher().cancelAll();
+    }
+
+    @Override
+    public void prepareForRun() {
+        cancellationRequested.set(false);
     }
 
     private void sleepBeforeRetry(LlmRetryPolicy retryPolicy, long delayMillis) throws IOException {

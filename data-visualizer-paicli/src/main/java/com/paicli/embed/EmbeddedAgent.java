@@ -15,6 +15,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -24,6 +25,7 @@ public final class EmbeddedAgent {
     private final ToolRegistry tools;
     private final Agent agent;
     private final AtomicReference<CancellationToken> currentRun = new AtomicReference<>();
+    private final AtomicBoolean pendingCancel = new AtomicBoolean();
     private boolean started;
 
     public EmbeddedAgent(LlmClient llmClient, String trustedSystemInstruction) {
@@ -51,6 +53,11 @@ public final class EmbeddedAgent {
         return tools.getToolDefinitions();
     }
 
+    /** Refreshes the trusted stage instruction while retaining this session's conversation history. */
+    public synchronized void setSystemInstruction(String instruction) {
+        agent.setEmbeddedSystemInstruction(instruction);
+    }
+
     /** Reuses this Agent's conversation history; concurrent turns are serialized. */
     public synchronized EmbeddedTurnResult run(String input, String submittedUserInput,
                                                Consumer<EmbeddedEvent> listener) {
@@ -58,8 +65,13 @@ public final class EmbeddedAgent {
             throw new IllegalArgumentException("input must not be blank");
         }
         started = true;
+        llmClient.prepareForRun();
         CancellationToken token = new CancellationToken();
         currentRun.set(token);
+        if (pendingCancel.getAndSet(false)) {
+            token.cancel();
+            llmClient.cancelInFlightCalls();
+        }
         EmbeddedRenderer renderer = new EmbeddedRenderer(listener);
         agent.setRenderer(renderer);
         try (CancellationContext.Scope ignored = CancellationContext.bind(token)) {
@@ -89,6 +101,14 @@ public final class EmbeddedAgent {
         if (token != null) {
             token.cancel();
             llmClient.cancelInFlightCalls();
+        } else {
+            pendingCancel.set(true);
+            token = currentRun.get();
+            if (token != null) {
+                pendingCancel.set(false);
+                token.cancel();
+                llmClient.cancelInFlightCalls();
+            }
         }
     }
 }

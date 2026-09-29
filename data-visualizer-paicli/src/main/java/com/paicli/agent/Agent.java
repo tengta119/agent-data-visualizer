@@ -60,7 +60,7 @@ public class Agent {
     private Supplier<Boolean> hitlEnabledSupplier = () -> false;
     private boolean returnFinalResponseWhenStreamed;
     private final PromptAssembler promptAssembler = PromptAssembler.createDefault();
-    private final String embeddedSystemInstruction;
+    private String embeddedSystemInstruction;
     private final boolean propagateFailures;
 
     public Agent(LlmClient llmClient) {
@@ -130,6 +130,14 @@ public class Agent {
 
     public void setRenderer(Renderer renderer) {
         this.renderer = renderer;
+    }
+
+    /** Refreshes a trusted embedded instruction before the next serialized turn. */
+    public void setEmbeddedSystemInstruction(String instruction) {
+        if (!propagateFailures || instruction == null || instruction.isBlank()) {
+            throw new IllegalArgumentException("A non-blank embedded instruction is required");
+        }
+        this.embeddedSystemInstruction = instruction;
     }
 
     public void setReturnFinalResponseWhenStreamed(boolean returnFinalResponseWhenStreamed) {

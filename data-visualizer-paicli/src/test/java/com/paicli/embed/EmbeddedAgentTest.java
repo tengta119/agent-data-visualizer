@@ -45,6 +45,19 @@ class EmbeddedAgentTest {
     }
 
     @Test
+    void refreshesTrustedInstructionWithoutDiscardingSessionHistory() {
+        FakeClient client = new FakeClient();
+        EmbeddedAgent agent = new EmbeddedAgent(client, "First stage instruction");
+        agent.run("first request");
+
+        agent.setSystemInstruction("Updated stage instruction");
+        agent.run("second request");
+
+        assertEquals("Updated stage instruction", client.messages.get(0).content());
+        assertEquals(2, client.messages.stream().filter(message -> "user".equals(message.role())).count());
+    }
+
+    @Test
     void emitsContentEventsAndReturnsFinalAnswer() {
         FakeClient client = new FakeClient();
         client.stream = true;
