@@ -4,6 +4,7 @@ package com.paicli.embed;
 public final class EmbeddedTurnException extends RuntimeException {
     public enum Kind {
         MODEL_IO,
+        TOOL,
         CANCELLED,
         EXECUTION
     }

@@ -3,10 +3,13 @@ package top.lbwxxc.ai.domain.agent.service.paicli;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.paicli.embed.EmbeddedAgent;
+import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
 import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
 import top.lbwxxc.ai.domain.agent.service.paicli.PaiCliConfigCompiler.AgentDefinition;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContext;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -20,7 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
-/** Internal TASK-007 service; TASK-008 will adapt the existing HTTP contract to this boundary. */
+/** Versioned PaiCLI workflow and session runtime used by the HTTP adapter. */
 @Service
 public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
     private final ObjectMapper mapper = new ObjectMapper();
@@ -31,7 +34,12 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
     private final Map<String, SessionState> sessions = new ConcurrentHashMap<>();
 
     public PaiCliWorkflowRuntime(PaiCliModelFactory models) {
-        this.engine = new PaiCliWorkflowEngine(models, ForkJoinPool.commonPool());
+        this(models, PaiCliToolInstaller.NONE);
+    }
+
+    @Autowired
+    public PaiCliWorkflowRuntime(PaiCliModelFactory models, PaiCliToolInstaller tools) {
+        this.engine = new PaiCliWorkflowEngine(models, ForkJoinPool.commonPool(), tools);
     }
 
     /** Validates and builds every agent before publishing one new query/execution snapshot. */
@@ -41,6 +49,17 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
         String configJson = serialize(copy);
         long version = versions.incrementAndGet();
         current.set(new Snapshot(version, configJson, definitions));
+        for (SessionState session : sessions.values()) {
+            if (session.version != version && session.lock.tryLock()) {
+                try {
+                    if (!session.running) {
+                        session.closeAgents();
+                    }
+                } finally {
+                    session.lock.unlock();
+                }
+            }
+        }
         return version;
     }
 
@@ -80,6 +99,11 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
     /** A locked turn retains the config snapshot it entered with, even if install() publishes a new one. */
     public PaiCliWorkflowResult run(String agentId, String userId, String sessionId, String input,
                                     Consumer<PaiCliWorkflowEvent> listener) {
+        return run(agentId, userId, sessionId, input, null, listener);
+    }
+
+    public PaiCliWorkflowResult run(String agentId, String userId, String sessionId, String input,
+                                    CommandExecutionContext context, Consumer<PaiCliWorkflowEvent> listener) {
         requireIdentity(agentId, userId);
         if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("input must not be blank");
@@ -106,10 +130,20 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
                         "Unknown agent ID");
             }
             session.running = true;
+            session.activeRequestId = context == null ? null : context.requestId();
             try {
-                return engine.run(definition, input, session.stageAgents, session.activeAgents, listener);
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new PaiCliWorkflowException(PaiCliWorkflowException.Reason.WORKFLOW_STATE,
+                            "Request cancelled before execution");
+                }
+                return engine.run(definition, input, session.stageAgents, session.activeAgents, context, listener);
             } finally {
                 session.running = false;
+                session.activeRequestId = null;
+                Snapshot latest = current.get();
+                if (latest != null && session.version != latest.version()) {
+                    session.closeAgents();
+                }
             }
         } finally {
             session.lock.unlock();
@@ -125,6 +159,32 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
                     "Session does not belong to this agent and user");
         }
         session.activeAgents.forEach(EmbeddedAgent::cancel);
+    }
+
+    public void cancelRequest(CommandExecutionContext context) {
+        if (context == null || context.requestId() == null || context.sessionId() == null) {
+            return;
+        }
+        SessionState state = sessions.get(context.sessionId());
+        if (state != null && state.agentId.equals(context.agentId())
+                && state.userId.equals(context.userId())
+                && context.requestId().equals(state.activeRequestId)) {
+            state.activeAgents.forEach(EmbeddedAgent::cancel);
+        }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        for (SessionState session : sessions.values()) {
+            session.activeAgents.forEach(EmbeddedAgent::cancel);
+            if (session.lock.tryLock()) {
+                try {
+                    session.closeAgents();
+                } finally {
+                    session.lock.unlock();
+                }
+            }
+        }
     }
 
     private SessionState session(String sessionId) {
@@ -186,6 +246,7 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
         private final long version;
         private final ReentrantLock lock = new ReentrantLock(true);
         private boolean running;
+        private volatile String activeRequestId;
         private final Map<String, EmbeddedAgent> stageAgents = new ConcurrentHashMap<>();
         private final Set<EmbeddedAgent> activeAgents = ConcurrentHashMap.newKeySet();
 
@@ -193,6 +254,11 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
             this.agentId = agentId;
             this.userId = userId;
             this.version = version;
+        }
+
+        private void closeAgents() {
+            stageAgents.values().forEach(EmbeddedAgent::close);
+            stageAgents.clear();
         }
     }
 }

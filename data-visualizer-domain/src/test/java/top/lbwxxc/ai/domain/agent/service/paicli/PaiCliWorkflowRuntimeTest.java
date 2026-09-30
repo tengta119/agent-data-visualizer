@@ -409,6 +409,17 @@ class PaiCliWorkflowRuntimeTest {
         assertEquals(PaiCliWorkflowException.Reason.CONFIG_INVALID,
                 assertThrows(PaiCliWorkflowException.class, () -> runtime.install(config(unsupported))).reason());
 
+        AiAgentConfigTableVO unsupportedSse = table("100003", List.of(stage("only", "ONE", "answer")),
+                List.of(), "only");
+        AiAgentConfigTableVO.Module.ChatModel.ToolMcp sseTool = new AiAgentConfigTableVO.Module.ChatModel.ToolMcp();
+        var sse = new AiAgentConfigTableVO.Module.ChatModel.ToolMcp.SSEServerParameters();
+        sse.setName("legacy-search");
+        sse.setBaseUri("https://example.test/mcp");
+        sseTool.setSse(sse);
+        unsupportedSse.getModule().getChatModel().setToolMcpList(List.of(sseTool));
+        assertEquals(PaiCliWorkflowException.Reason.CONFIG_INVALID,
+                assertThrows(PaiCliWorkflowException.class, () -> runtime.install(config(unsupportedSse))).reason());
+
         AiAgentConfigTableVO missingModel = table("100003", List.of(stage("only", "ONE", "answer")),
                 List.of(), "only");
         missingModel.getModule().getChatModel().setModel(null);

@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -69,6 +71,8 @@ final class PaiCliConfigCompiler {
         validateTools(module.getChatModel());
         validatePlugins(module.getRunner());
         String skillText = loadSkills(module.getChatModel().getToolSkillsList());
+        List<AiAgentConfigTableVO.Module.ChatModel.ToolMcp> tools = module.getChatModel().getToolMcpList() == null
+                ? List.of() : List.copyOf(module.getChatModel().getToolMcpList());
 
         Map<String, StageSpec> stages = new LinkedHashMap<>();
         if (module.getAgents() == null || module.getAgents().isEmpty()) {
@@ -82,7 +86,7 @@ final class PaiCliConfigCompiler {
             String name = required(stage.getName(), "stage name");
             String outputKey = required(stage.getOutputKey(), "output-key of " + name);
             String instruction = required(stage.getInstruction(), "instruction of " + name);
-            if (stages.putIfAbsent(name, new StageSpec(name, instruction, outputKey, skillText)) != null) {
+            if (stages.putIfAbsent(name, new StageSpec(name, instruction, outputKey, skillText, tools)) != null) {
                 throw invalid("Duplicate stage name: " + name);
             }
             outputKeys.add(outputKey);
@@ -172,10 +176,36 @@ final class PaiCliConfigCompiler {
         if (model.getToolMcpList() == null) {
             return;
         }
+        Set<String> names = new HashSet<>();
         for (AiAgentConfigTableVO.Module.ChatModel.ToolMcp tool : model.getToolMcpList()) {
-            if (tool == null || tool.getSse() != null || tool.getStdio() != null || tool.getLocal() == null
-                    || !"ShellExecutorToolCallbackProvider".equals(tool.getLocal().getName())) {
-                throw invalid("Unsupported MCP tool configuration");
+            if (tool == null) {
+                throw invalid("Null MCP tool configuration");
+            }
+            int choices = (tool.getLocal() == null ? 0 : 1) + (tool.getStdio() == null ? 0 : 1)
+                    + (tool.getSse() == null ? 0 : 1);
+            if (choices != 1) {
+                throw invalid("MCP tool must declare exactly one transport");
+            }
+            if (tool.getLocal() != null
+                    && !"ShellExecutorToolCallbackProvider".equals(tool.getLocal().getName())) {
+                throw invalid("Unsupported local tool: " + tool.getLocal().getName());
+            }
+            String name = tool.getLocal() != null ? "ShellExecutor" :
+                    tool.getStdio() != null ? tool.getStdio().getName() : tool.getSse().getName();
+            if (name == null || name.isBlank() || !names.add(name)) {
+                throw invalid("Missing or duplicate MCP server name");
+            }
+            if (tool.getStdio() != null) {
+                var stdio = tool.getStdio();
+                if (stdio.getName() == null || stdio.getName().isBlank()
+                        || stdio.getServerParameters() == null
+                        || stdio.getServerParameters().getCommand() == null
+                        || stdio.getServerParameters().getCommand().isBlank()) {
+                    throw invalid("Invalid stdio MCP configuration");
+                }
+            }
+            if (tool.getSse() != null) {
+                throw invalid("Legacy SSE MCP transport is not supported by the embedded PaiCLI runtime");
             }
         }
     }
@@ -197,8 +227,26 @@ final class PaiCliConfigCompiler {
         }
         StringBuilder content = new StringBuilder();
         for (AiAgentConfigTableVO.Module.ChatModel.ToolSkills skill : skills) {
-            if (skill == null || !"resource".equals(skill.getType())
-                    || !"agent/skills".equals(skill.getPath())) {
+            if (skill == null || skill.getPath() == null || skill.getPath().isBlank()) {
+                throw invalid("Unsupported skill configuration");
+            }
+            if ("directory".equals(skill.getType())) {
+                Path directory = Path.of(skill.getPath()).toAbsolutePath().normalize();
+                if (!Files.isDirectory(directory)) {
+                    throw invalid("Skill directory does not exist: " + directory);
+                }
+                try (var files = Files.walk(directory)) {
+                    for (Path file : files.filter(path -> path.getFileName().toString().equals("SKILL.md"))
+                            .sorted().toList()) {
+                        content.append("\n\n## Skill: ").append(file.getParent().getFileName()).append("\n")
+                                .append(Files.readString(file, StandardCharsets.UTF_8));
+                    }
+                } catch (IOException error) {
+                    throw invalid("Cannot read skill directory: " + directory);
+                }
+                continue;
+            }
+            if (!"resource".equals(skill.getType()) || !"agent/skills".equals(skill.getPath())) {
                 throw invalid("Unsupported skill configuration");
             }
             for (String name : DRAWING_SKILLS) {
@@ -258,7 +306,8 @@ final class PaiCliConfigCompiler {
                            Map<String, StageSpec> stages, Map<String, WorkflowSpec> workflows, String entry) {
     }
 
-    record StageSpec(String name, String instruction, String outputKey, String skills) {
+    record StageSpec(String name, String instruction, String outputKey, String skills,
+                     List<AiAgentConfigTableVO.Module.ChatModel.ToolMcp> tools) {
     }
 
     record WorkflowSpec(String name, WorkflowType type, List<String> children, int iterations) {

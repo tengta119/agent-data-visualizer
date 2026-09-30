@@ -3,6 +3,7 @@ package com.paicli.embed;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.paicli.llm.LlmClient;
 import com.paicli.mcp.protocol.McpToolDescriptor;
+import com.paicli.tool.ToolOutput;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -86,6 +87,20 @@ class EmbeddedAgentTest {
     }
 
     @Test
+    void failedToolCannotBeReportedAsSuccessfulFinalResult() {
+        FakeClient client = new FakeClient();
+        client.callTool = true;
+        EmbeddedAgent agent = new EmbeddedAgent(client, "Return a diagram.");
+        agent.registerMcpToolOutput(new McpToolDescriptor("host", "lookup", "mcp__host__lookup",
+                "Lookup", new ObjectMapper().createObjectNode()), ignored -> ToolOutput.failure("rejected"));
+
+        EmbeddedTurnException error = assertThrows(EmbeddedTurnException.class,
+                () -> agent.run("draw"));
+
+        assertEquals(EmbeddedTurnException.Kind.TOOL, error.kind());
+    }
+
+    @Test
     void cancellationReachesInFlightModelCall() throws Exception {
         FakeClient client = new FakeClient();
         client.block = true;
@@ -122,6 +137,7 @@ class EmbeddedAgentTest {
         private boolean stream;
         private boolean fail;
         private boolean block;
+        private boolean callTool;
         private volatile boolean cancelCalled;
 
         @Override
@@ -151,6 +167,10 @@ class EmbeddedAgentTest {
             if (stream) {
                 listener.onContentDelta("do");
                 listener.onContentDelta("ne");
+            }
+            if (callTool) {
+                return new ChatResponse("assistant", "", List.of(new ToolCall("call-1",
+                        new ToolCall.Function("mcp__host__lookup", "{}"))), 1, 1);
             }
             return new ChatResponse("assistant", "done", List.of(), 1, 1);
         }

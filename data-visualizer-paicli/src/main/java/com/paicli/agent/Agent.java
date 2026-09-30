@@ -59,6 +59,7 @@ public class Agent {
     private Renderer renderer;
     private Supplier<Boolean> hitlEnabledSupplier = () -> false;
     private boolean returnFinalResponseWhenStreamed;
+    private boolean failOnToolError;
     private final PromptAssembler promptAssembler = PromptAssembler.createDefault();
     private String embeddedSystemInstruction;
     private final boolean propagateFailures;
@@ -142,6 +143,11 @@ public class Agent {
 
     public void setReturnFinalResponseWhenStreamed(boolean returnFinalResponseWhenStreamed) {
         this.returnFinalResponseWhenStreamed = returnFinalResponseWhenStreamed;
+    }
+
+    /** Embedded hosts can require a failed tool call to fail the turn. */
+    public void setFailOnToolError(boolean failOnToolError) {
+        this.failOnToolError = failOnToolError;
     }
 
     /**
@@ -859,7 +865,6 @@ public class Agent {
             String toolName = toolCall.function().name();
             String toolArgs = toolCall.function().arguments();
             log.info("Scheduling tool: {} (iteration={})", toolName, iteration);
-            log.debug("Tool args [{}]: {}", toolName, toolArgs);
             invocations.add(new ToolInvocation(toolCall.id(), toolName, toolArgs));
         }
 
@@ -870,6 +875,9 @@ public class Agent {
         for (ToolExecutionResult result : results) {
             log.debug("Tool result preview [{}]: {}", result.name(), preview(result.result(), 300));
             emitToolResultSummary(result);
+        }
+        if (failOnToolError && results.stream().anyMatch(result -> !result.successful())) {
+            throw new AgentRunException(AgentRunException.Reason.TOOL, "A tool call failed");
         }
         return results;
     }

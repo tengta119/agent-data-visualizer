@@ -42,7 +42,7 @@ class PaiCliDefaultConfigurationTest {
         PaiCliWorkflowRuntime runtime = new PaiCliWorkflowRuntime(settings -> {
             endpoint.set(settings.endpoint());
             return new FakeClient();
-        });
+        }, (agent, tools) -> assertEquals(1, tools.size()));
 
         runtime.install(config);
         String sessionId = runtime.createSession("100003", "test-user");

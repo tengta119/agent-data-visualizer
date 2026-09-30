@@ -2,6 +2,7 @@ package top.lbwxxc.ai.domain.agent.service.paicli;
 
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
 import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContext;
 
 import java.util.List;
 import java.util.function.Consumer;
@@ -21,5 +22,10 @@ public interface IPaiCliWorkflowService {
     PaiCliWorkflowResult run(String agentId, String userId, String sessionId, String input,
                              Consumer<PaiCliWorkflowEvent> listener);
 
+    PaiCliWorkflowResult run(String agentId, String userId, String sessionId, String input,
+                             CommandExecutionContext context, Consumer<PaiCliWorkflowEvent> listener);
+
     void cancel(String agentId, String userId, String sessionId);
+
+    void cancelRequest(CommandExecutionContext context);
 }

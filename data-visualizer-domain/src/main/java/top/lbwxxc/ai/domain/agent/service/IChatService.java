@@ -1,11 +1,12 @@
 package top.lbwxxc.ai.domain.agent.service;
 
-import top.lbwxxc.ai.domain.agent.model.entity.ChatCommandEntity;
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
-import com.google.adk.events.Event;
-import io.reactivex.rxjava3.core.Flowable;
+import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.CommandExecutionContext;
+import top.lbwxxc.ai.domain.agent.service.paicli.PaiCliWorkflowEvent;
+import top.lbwxxc.ai.domain.agent.service.paicli.PaiCliWorkflowResult;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 /**
  * 对话接口
@@ -19,12 +20,12 @@ public interface IChatService {
 
     String createSession(String agentId, String userId);
 
-    List<String> handleMessage(String agentId, String userId, String message);
+    PaiCliWorkflowResult handleMessage(String agentId, String userId, String sessionId, String message);
 
-    List<String> handleMessage(String agentId, String userId, String sessionId, String message);
+    PaiCliWorkflowResult handleMessageStream(String agentId, String userId, String sessionId,
+                                             CommandExecutionContext context, String message,
+                                             Consumer<PaiCliWorkflowEvent> listener);
 
-    Flowable<Event> handleMessageStream(String agentId, String userId, String sessionId, String requestId, String message);
-
-    List<String> handleMessage(ChatCommandEntity chatCommandEntity);
+    void cancel(CommandExecutionContext context);
 
 }

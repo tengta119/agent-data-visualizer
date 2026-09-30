@@ -76,7 +76,6 @@ public class CommandPolicyReviewer {
             }
             return forbidden("命令未命中允许或审批规则: " + subCommand.trim(), commands);
         }
-        promptMatched = true;
         if (promptMatched) {
             return new CommandPolicyReview(CommandPolicyDecision.PROMPT, "命令需要用户审批后执行", commands);
         }

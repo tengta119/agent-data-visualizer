@@ -4,7 +4,8 @@ package com.paicli.agent;
 public final class AgentRunException extends RuntimeException {
     public enum Reason {
         MODEL_IO,
-        CANCELLED
+        CANCELLED,
+        TOOL
     }
 
     private final Reason reason;

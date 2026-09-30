@@ -1,7 +1,7 @@
 package top.lbwxxc.ai.config;
 
 import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
-import top.lbwxxc.ai.domain.agent.service.IArmoryService;
+import top.lbwxxc.ai.domain.agent.service.paicli.IPaiCliWorkflowService;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.beans.factory.config.YamlPropertiesFactoryBean;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -36,7 +36,7 @@ public class AiAgentAutoConfig implements ApplicationListener<ApplicationReadyEv
     private AiAgentAutoConfigProperties aiAgentAutoConfigProperties;
 
     @Resource
-    private IArmoryService armoryService;
+    private IPaiCliWorkflowService workflowService;
 
     @Resource
     private Environment environment;
@@ -50,11 +50,11 @@ public class AiAgentAutoConfig implements ApplicationListener<ApplicationReadyEv
 
             if (rawYaml == null) {
                 log.info("使用默认配置装配 Agent");
-                armoryService.acceptArmoryAgents(aiAgentAutoConfigProperties);
+                workflowService.install(aiAgentAutoConfigProperties);
             } else {
                 log.info("使用本地配置装配");
                 AiAgentAutoConfigProperties currentAiAgentAutoConfigProperties = parseYaml(rawYaml);
-                armoryService.acceptArmoryAgents(currentAiAgentAutoConfigProperties);
+                workflowService.install(currentAiAgentAutoConfigProperties);
             }
 
         } catch (Exception e) {

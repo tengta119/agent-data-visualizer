@@ -13,7 +13,7 @@ import top.lbwxxc.ai.api.dto.UpdateAgentConfigRequestDTO;
 import top.lbwxxc.ai.api.response.QueryCurrentAgentConfigResponse;
 import top.lbwxxc.ai.api.response.Response;
 import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
-import top.lbwxxc.ai.domain.agent.service.IArmoryService;
+import top.lbwxxc.ai.domain.agent.service.paicli.IPaiCliWorkflowService;
 import top.lbwxxc.ai.types.enums.ResponseCode;
 import top.lbwxxc.ai.types.exception.AppException;
 
@@ -27,7 +27,7 @@ import java.util.Map;
 public class AgentAdminService implements IAgentAdminService {
 
     @Resource
-    private IArmoryService armoryService;
+    private IPaiCliWorkflowService workflowService;
 
     @RequestMapping(value = "query_current_agent_config", method = RequestMethod.GET)
     @Override
@@ -37,7 +37,7 @@ public class AgentAdminService implements IAgentAdminService {
             return Response.<QueryCurrentAgentConfigResponse>builder()
                     .code(ResponseCode.SUCCESS.getCode())
                     .info(ResponseCode.SUCCESS.getInfo())
-                    .data(buildCurrentConfigResponse(armoryService.queryCurrentAiAgentConfigTableVO()))
+                    .data(buildCurrentConfigResponse(workflowService.currentConfiguration()))
                     .build();
         } catch (AppException e) {
             log.error("查询当前生效的 agent 配置异常", e);
@@ -64,12 +64,12 @@ public class AgentAdminService implements IAgentAdminService {
                     JSON.toJSONString(requestDTO),
                     AiAgentAutoConfigProperties.class
             );
-            armoryService.acceptArmoryAgents(aiAgentAutoConfigProperties);
+            workflowService.install(aiAgentAutoConfigProperties);
 
             return Response.<QueryCurrentAgentConfigResponse>builder()
                     .code(ResponseCode.SUCCESS.getCode())
                     .info(ResponseCode.SUCCESS.getInfo())
-                    .data(buildCurrentConfigResponse(armoryService.queryCurrentAiAgentConfigTableVO()))
+                    .data(buildCurrentConfigResponse(workflowService.currentConfiguration()))
                     .build();
         } catch (AppException e) {
             log.error("动态更新 agent 配置异常", e);

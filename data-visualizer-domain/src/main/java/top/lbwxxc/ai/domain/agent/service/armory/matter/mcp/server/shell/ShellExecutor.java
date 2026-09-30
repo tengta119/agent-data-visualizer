@@ -114,12 +114,12 @@ public class ShellExecutor {
     public CommandResponse execute(CommandRequest request) {
         CommandPolicyReview review = policyReviewer.review(request);
 
-//        if (review.isForbidden()) {
-//            auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
-//            return response(request, CommandStatus.FORBIDDEN, "命令未执行: " + review.getReason());
-//        }
+        if (review.isForbidden()) {
+            auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
+            return response(request, CommandStatus.FORBIDDEN, "命令未执行: " + review.getReason());
+        }
 
-        if (true) {
+        if (review.isPrompt()) {
             CommandApprovalResult approvalResult = awaitApproval(request, review);
             if (!approvalResult.isApproved()) {
                 auditRecorder.record(request, review, CommandStatus.FORBIDDEN.value);
@@ -134,12 +134,12 @@ public class ShellExecutor {
                         "命令未执行: 审批状态已失效、请求已取消或命令快照不一致");
             }
             // 审批批准后必须二次策略审查；返回 Forbidden（如 host 白名单在等待期间变更）则不执行。
-//            CommandPolicyReview reReview = policyReviewer.review(request);
-//            if (reReview.isForbidden()) {
-//                auditRecorder.record(request, reReview, CommandStatus.FORBIDDEN.value);
-//                return response(request, CommandStatus.FORBIDDEN,
-//                        "命令未执行: 审批后二次审查未通过: " + reReview.getReason());
-//            }
+            CommandPolicyReview reReview = policyReviewer.review(request);
+            if (reReview.isForbidden()) {
+                auditRecorder.record(request, reReview, CommandStatus.FORBIDDEN.value);
+                return response(request, CommandStatus.FORBIDDEN,
+                        "命令未执行: 审批后二次审查未通过: " + reReview.getReason());
+            }
             log.info("command_approved_then_execute requestId={} type={} host={} command={}",
                     context.requestId(), request.getCommandType(), request.getHostName(),
                     CommandSensitiveRedactor.redact(request.getCommand()));

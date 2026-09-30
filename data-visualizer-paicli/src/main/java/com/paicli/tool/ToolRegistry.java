@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.paicli.browser.BrowserAuditMetadata;
+import com.paicli.embed.ToolInvocationContext;
 import com.paicli.browser.BrowserCheckResult;
 import com.paicli.browser.BrowserConnector;
 import com.paicli.browser.BrowserGuard;
@@ -1487,16 +1488,20 @@ public class ToolRegistry {
             return thread;
         });
 
+        Object requestContext = ToolInvocationContext.current();
+        var cancellationToken = CancellationContext.current();
         try {
             List<Callable<ToolExecutionResult>> tasks = invocations.stream()
-                    .<Callable<ToolExecutionResult>>map(invocation -> () -> {
+                    .<Callable<ToolExecutionResult>>map(invocation -> () -> ToolInvocationContext.call(requestContext, () -> {
+                        try (CancellationContext.Scope ignored = CancellationContext.bind(cancellationToken)) {
                         if (CancellationContext.isCancelled()) {
                             return ToolExecutionResult.failed(invocation, "用户取消了此次工具调用");
                         }
                         long startedAt = System.nanoTime();
                         ToolOutput output = executeToolOutput(invocation.name(), invocation.argumentsJson());
                         return ToolExecutionResult.completed(invocation, output, elapsedMillis(startedAt));
-                    })
+                        }
+                    }))
                     .toList();
 
             List<Future<ToolExecutionResult>> futures =

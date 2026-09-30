@@ -5,7 +5,6 @@ import top.lbwxxc.ai.domain.agent.model.entity.ChatCommandEntity;
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentConfigTableVO;
 import top.lbwxxc.ai.domain.agent.model.valobj.AiAgentRegisterVO;
 import top.lbwxxc.ai.domain.agent.model.valobj.properties.AiAgentAutoConfigProperties;
-import top.lbwxxc.ai.domain.agent.service.IChatService;
 import top.lbwxxc.ai.domain.agent.service.armory.factory.DefaultArmoryFactory;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.plugin.ContextCompactionPlugin;
 import top.lbwxxc.ai.domain.agent.service.armory.matter.plugin.MyLogPlugin;
@@ -21,7 +20,6 @@ import com.google.genai.types.Part;
 import io.reactivex.rxjava3.core.Flowable;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,8 +27,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
-@Service
-public class ChatService implements IChatService {
+public class ChatService {
 
     @Resource
     private DefaultArmoryFactory defaultArmoryFactory;
@@ -47,7 +44,6 @@ public class ChatService implements IChatService {
         return agentId + ":" + userId;
     }
 
-    @Override
     public List<AiAgentConfigTableVO.Agent> queryAiAgentConfigList() {
         Map<String, AiAgentConfigTableVO> tables = aiAgentAutoConfigProperties.getTables();
 
@@ -63,7 +59,6 @@ public class ChatService implements IChatService {
         return agentList;
     }
 
-    @Override
     public String createSession(String agentId, String userId) {
         AiAgentRegisterVO aiAgentRegisterVO = defaultArmoryFactory.getAiAgentRegisterVO(agentId);
 
@@ -82,7 +77,6 @@ public class ChatService implements IChatService {
         });
     }
 
-    @Override
     public List<String> handleMessage(String agentId, String userId, String message) {
 
         AiAgentRegisterVO aiAgentRegisterVO = defaultArmoryFactory.getAiAgentRegisterVO(agentId);
@@ -96,7 +90,6 @@ public class ChatService implements IChatService {
         return handleMessage(agentId, userId, sessionId, message);
     }
 
-    @Override
     public List<String> handleMessage(String agentId, String userId, String sessionId, String message) {
 
         AiAgentRegisterVO aiAgentRegisterVO = defaultArmoryFactory.getAiAgentRegisterVO(agentId);
@@ -116,7 +109,6 @@ public class ChatService implements IChatService {
         return outputs;
     }
 
-    @Override
     public Flowable<Event> handleMessageStream(String agentId, String userId, String sessionId, String requestId, String message) {
         AiAgentRegisterVO aiAgentRegisterVO = defaultArmoryFactory.getAiAgentRegisterVO(agentId);
 
@@ -129,7 +121,6 @@ public class ChatService implements IChatService {
         return runner.runAsync(userId, sessionId, userMsg);
     }
 
-    @Override
     public List<String> handleMessage(ChatCommandEntity chatCommandEntity) {
         AiAgentRegisterVO aiAgentRegisterVO = defaultArmoryFactory.getAiAgentRegisterVO(chatCommandEntity.getAgentId());
 
