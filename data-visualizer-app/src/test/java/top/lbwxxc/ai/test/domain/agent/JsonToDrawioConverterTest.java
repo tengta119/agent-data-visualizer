@@ -41,7 +41,7 @@ class JsonToDrawioConverterTest {
         assertTrue(xml.endsWith("</mxGraphModel>"));
         // 结构完整：root、0/1 根节点、3 个 vertex、2 个 edge
         assertTrue(xml.contains("<mxCell id=\"0\"/><mxCell id=\"1\" parent=\"0\"/>"));
-        assertEquals(4, countOccurrences(xml, "vertex=\"1\""));
+        assertEquals(3, countOccurrences(xml, "vertex=\"1\""));
         assertEquals(2, countOccurrences(xml, "edge=\"1\""));
         // 可被现有正则提取（前端 extractDrawIoXml 同源逻辑）
         Matcher matcher = DRAWIO_XML_PATTERN.matcher(xml);

@@ -34,7 +34,8 @@ public final class DefaultPaiCliToolInstaller implements PaiCliToolInstaller {
     public void install(EmbeddedAgent agent, List<AiAgentConfigTableVO.Module.ChatModel.ToolMcp> tools) {
         for (var config : tools) {
             if (config.getLocal() != null) {
-                if (!"ShellExecutorToolCallbackProvider".equals(config.getLocal().getName())) {
+                if (!"ShellExecutor".equals(config.getLocal().getName())
+                        && !"ShellExecutorToolCallbackProvider".equals(config.getLocal().getName())) {
                     throw new PaiCliWorkflowException(PaiCliWorkflowException.Reason.CONFIG_INVALID,
                             "Unsupported local tool");
                 }

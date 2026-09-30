@@ -21,6 +21,7 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.scope.P
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 
 import java.io.IOException;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -52,8 +53,7 @@ class ShellExecutorLocalExecutionTest {
     }
 
     /**
-     * 当前实现下所有命令都会进入审批流程，因此测试用自动批准桥接器把审批短路，
-     * 只聚焦本地执行器的超时与并发语义。
+     * 测试中的普通命令命中 allow 规则；桥接器保留给需要审批的用例使用。
      */
     private class AutoApprovingAgentStreamBridge extends AgentStreamBridge {
 
@@ -85,6 +85,7 @@ class ShellExecutorLocalExecutionTest {
     void hangingLocalCommandTimesOutAndFollowingCommandStillWorks() throws Exception {
         Assumptions.assumeTrue(localShellAvailable(), "当前环境没有可用的本地 Shell，跳过本地执行测试");
         properties.setLocalExecutionTimeoutMillis(30_000L);
+        properties.setLocalAllow(List.of("pwd", "Start-Sleep", "sleep"));
         newExecutor();
 
         // 预热：先用同一请求的一条普通命令启动该请求的 Shell，避免把 Shell 启动耗时算进后面的超时
@@ -133,8 +134,8 @@ class ShellExecutorLocalExecutionTest {
 
     private static String hangCommand() {
         return isWindows()
-                ? "while ($true) { Start-Sleep -Milliseconds 200 }"
-                : "while true; do sleep 1; done";
+                ? "Start-Sleep -Seconds 10"
+                : "sleep 10";
     }
 
     private static boolean isWindows() {

@@ -48,8 +48,9 @@ OkHttp 4.12.0 and the other standalone libraries use explicit versions in this
 module POM. No `logback.xml` is packaged, so the application owns logging.
 `prompts/` and `skills/` resources retain their upstream classpath paths; the
 embedded prompt path uses the supplied system instruction rather than loading
-PaiCLI's default prompt. The domain module now uses this API in an internal
-workflow service. The running HTTP path still uses ADK; TASK-008 will switch it.
+PaiCLI's default prompt. The domain module uses this API in its workflow
+service. Both synchronous and streaming HTTP paths run through that service;
+the old ADK/Spring AI adapter and its Maven dependencies have been removed.
 
 Per the repository's `AGENTS.md`, build and test commands are run manually by
 the developer. Focused fake-model tests are provided in `EmbeddedAgentTest`.

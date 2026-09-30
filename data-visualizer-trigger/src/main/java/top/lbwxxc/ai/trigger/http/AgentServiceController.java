@@ -26,7 +26,7 @@ import top.lbwxxc.ai.domain.agent.service.paicli.PaiCliWorkflowResult;
 import top.lbwxxc.ai.types.enums.ResponseCode;
 import top.lbwxxc.ai.types.exception.AppException;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;

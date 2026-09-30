@@ -420,6 +420,12 @@ class PaiCliWorkflowRuntimeTest {
         assertEquals(PaiCliWorkflowException.Reason.CONFIG_INVALID,
                 assertThrows(PaiCliWorkflowException.class, () -> runtime.install(config(unsupportedSse))).reason());
 
+        AiAgentConfigTableVO legacyPlugin = table("100003", List.of(stage("only", "ONE", "answer")),
+                List.of(), "only");
+        legacyPlugin.getModule().getRunner().setPluginNameList(List.of("myLogPlugin"));
+        assertEquals(PaiCliWorkflowException.Reason.CONFIG_INVALID,
+                assertThrows(PaiCliWorkflowException.class, () -> runtime.install(config(legacyPlugin))).reason());
+
         AiAgentConfigTableVO missingModel = table("100003", List.of(stage("only", "ONE", "answer")),
                 List.of(), "only");
         missingModel.getModule().getChatModel().setModel(null);

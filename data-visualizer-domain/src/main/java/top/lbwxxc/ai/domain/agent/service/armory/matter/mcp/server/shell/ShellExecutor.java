@@ -9,7 +9,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
-import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Service;
 import top.lbwxxc.ai.domain.agent.adapter.port.IBusinessPort;
 import top.lbwxxc.ai.domain.agent.model.entity.GatewayCommandEntity;
@@ -107,10 +106,15 @@ public class ShellExecutor {
                 TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(Math.max(1, policyProperties.getLocalExecutionQueueCapacity())),
                 this::newShellExecutorThread,
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                (task, pool) -> {
+                    if (pool.isShutdown()) {
+                        throw new RejectedExecutionException("Local shell executor is shut down");
+                    }
+                    // Keep caller-run backpressure; runLocalShellTask rejects non-worker execution.
+                    task.run();
+                });
     }
 
-    @Tool(description = "调用命令行。命令执行前会自动审查：命中允许规则的命令直接执行；命中审批规则的命令会向当前流式对话请求用户审批，批准并二次审查通过后才执行；其余命令返回 forbidden 且不会执行。")
     public CommandResponse execute(CommandRequest request) {
         CommandPolicyReview review = policyReviewer.review(request);
 

@@ -23,7 +23,7 @@ ai:
                     sse-endpoint: sse?api_key=${bec.key}
                     request-timeout: 500000
                 - local:
-                    name: ShellExecutorToolCallbackProvider
+                    name: ShellExecutor
               tool-skills-list:
                 - type: resource
                   path: agent/skills

@@ -7,7 +7,7 @@ import top.lbwxxc.ai.domain.agent.model.entity.GatewayCommandEntity;
 import top.lbwxxc.ai.domain.agent.model.valobj.GatewayResponseVO;
 import top.lbwxxc.ai.infrastructure.socket.NettySocketServer;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 /**
  * 业务端口

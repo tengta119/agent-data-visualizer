@@ -24,7 +24,6 @@ final class PaiCliConfigCompiler {
     private static final Pattern PLACEHOLDER = Pattern.compile("\\{([A-Za-z][A-Za-z0-9_]*)\\}");
     private static final List<String> DRAWING_SKILLS = List.of(
             "drawio-uml", "drawio-sequence", "drawio-flowchart", "drawio-architecture");
-    private static final Set<String> LEGACY_PLUGINS = Set.of("contextCompactionPlugin", "myLogPlugin");
 
     Map<String, AgentDefinition> compile(AiAgentAutoConfigProperties config) {
         if (config == null || config.getTables() == null || config.getTables().isEmpty()) {
@@ -187,6 +186,7 @@ final class PaiCliConfigCompiler {
                 throw invalid("MCP tool must declare exactly one transport");
             }
             if (tool.getLocal() != null
+                    && !"ShellExecutor".equals(tool.getLocal().getName())
                     && !"ShellExecutorToolCallbackProvider".equals(tool.getLocal().getName())) {
                 throw invalid("Unsupported local tool: " + tool.getLocal().getName());
             }
@@ -214,10 +214,8 @@ final class PaiCliConfigCompiler {
         if (runner == null || runner.getPluginNameList() == null) {
             return;
         }
-        for (String name : runner.getPluginNameList()) {
-            if (!LEGACY_PLUGINS.contains(name)) {
-                throw invalid("Unsupported runner plugin: " + name);
-            }
+        if (!runner.getPluginNameList().isEmpty()) {
+            throw invalid("ADK runner plugins are no longer supported; remove plugin-name-list");
         }
     }
 

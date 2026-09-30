@@ -33,7 +33,7 @@ class PaiCliShellToolTest {
         LlmClient model = mock(LlmClient.class);
         EmbeddedAgent agent = new EmbeddedAgent(model, "test instruction");
         var local = new AiAgentConfigTableVO.Module.ChatModel.ToolMcp.LocalParameters();
-        local.setName("ShellExecutorToolCallbackProvider");
+        local.setName("ShellExecutor");
         var tool = new AiAgentConfigTableVO.Module.ChatModel.ToolMcp();
         tool.setLocal(local);
         new DefaultPaiCliToolInstaller(shell).install(agent, List.of(tool));

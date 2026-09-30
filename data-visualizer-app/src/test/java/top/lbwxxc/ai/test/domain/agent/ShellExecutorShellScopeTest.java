@@ -48,8 +48,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>使用内存 Shell 替身（{@link FakeShellLauncher}）而不是真实 Shell，避免依赖操作系统与
  * 真实命令；真实 Shell 的端到端行为由 {@code ShellExecutorLocalExecutionTest} 覆盖。</p>
  *
- * <p>注意：当前源码中所有命令都会进入审批流程，因此测试通过"自动批准 + 把 requestId 标记为活跃"
- * 的桥接器替身驱动执行；不得为了让测试通过而改动策略或审批实现。</p>
+ * <p>普通命令按 allow 规则执行；审批拒绝路径显式把 pwd 配为 prompt。
+ * 桥接器替身可控制审批决定与 requestId 活跃状态。</p>
  */
 class ShellExecutorShellScopeTest {
 
@@ -546,8 +546,14 @@ class ShellExecutorShellScopeTest {
 
     // ------------------------------------------------------------------ 拒绝路径零进程
 
+    private void requireApprovalForPwd() {
+        properties.setLocalAllow(List.of());
+        properties.setLocalPrompt(List.of("pwd"));
+    }
+
     @Test
     void approvalRejectedCreatesNoShell() {
+        requireApprovalForPwd();
         ShellExecutor executor = newExecutor();
         bridge.autoDecide(true, CommandApprovalDecision.REJECT);
 
@@ -560,6 +566,7 @@ class ShellExecutorShellScopeTest {
 
     @Test
     void approvalExpiredCreatesNoShell() {
+        requireApprovalForPwd();
         properties.setApprovalTimeoutMillis(200L);
         ShellExecutor executor = newExecutor();
         // 保持 PENDING：审批等待超时后命令必须安全失败
@@ -574,6 +581,7 @@ class ShellExecutorShellScopeTest {
 
     @Test
     void missingStreamContextCreatesNoShell() {
+        requireApprovalForPwd();
         ShellExecutor executor = newExecutor();
         // 有 ThreadLocal 上下文但桥接器不含该 requestId：审批前置检查失败，命令被拒绝
         ShellExecutor.CommandResponse response = runWithContextOnly(executor, "req-1", "pwd");
@@ -585,11 +593,12 @@ class ShellExecutorShellScopeTest {
 
     @Test
     void noContextLocalCommandCreatesNoShellBecauseApprovalFailsFast() {
+        requireApprovalForPwd();
         ShellExecutor executor = newExecutor();
 
         ShellExecutor.CommandResponse response = runWithoutContext(executor, "pwd");
 
-        // 当前实现下所有命令都要审批，无 ThreadLocal 上下文时审批安全失败，因此不会走到本地执行
+        // prompt 命令无 ThreadLocal 上下文时审批安全失败，因此不会走到本地执行
         assertEquals("forbidden", response.getResponseStatus());
         assertEquals(0, launcher.launchCount());
         assertEquals(0, executor.localShellCount());

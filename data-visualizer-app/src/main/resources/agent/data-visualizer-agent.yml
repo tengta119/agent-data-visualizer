@@ -18,7 +18,7 @@ ai:
               model: deepseek-v4-flash
               tool-mcp-list:
                 - local:
-                    name: ShellExecutorToolCallbackProvider
+                    name: ShellExecutor
               tool-skills-list:
                 - type: resource
                   path: agent/skills
@@ -144,6 +144,3 @@ ai:
             runner:
               # 指定入口为串行工作流，这是最稳健的配置
               agent-name: sequential_draw_process
-              plugin-name-list:
-                - contextCompactionPlugin
-                - myLogPlugin

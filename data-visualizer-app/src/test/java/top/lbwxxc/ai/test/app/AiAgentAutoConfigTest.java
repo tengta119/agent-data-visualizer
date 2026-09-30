@@ -4,12 +4,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import top.lbwxxc.ai.domain.agent.service.paicli.IPaiCliWorkflowService;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 /** Checks startup configuration without invoking an external model. */
-@SpringBootTest
+@SpringBootTest(properties = "open-ai.key=test-key")
 public class AiAgentAutoConfigTest {
     @Resource
     private IPaiCliWorkflowService workflow;
