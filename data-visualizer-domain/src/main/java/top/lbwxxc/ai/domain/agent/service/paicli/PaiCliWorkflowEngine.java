@@ -44,6 +44,7 @@ final class PaiCliWorkflowEngine {
         return run(definition, input, stageAgents, activeAgents, null, listener);
     }
 
+    /** 为本次 turn 创建独立输出状态，再从配置的 Runner 入口执行工作流。 */
     PaiCliWorkflowResult run(AgentDefinition definition, String input, Map<String, EmbeddedAgent> stageAgents,
                              Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
                              Consumer<PaiCliWorkflowEvent> listener) {
@@ -54,6 +55,10 @@ final class PaiCliWorkflowEngine {
         return new PaiCliWorkflowResult(last, state);
     }
 
+    /**
+     * 递归执行阶段或工作流节点。阶段 Agent 按节点路径在会话内复用，输出写入本次 turn 的状态，
+     * 供后续阶段通过 outputKey 占位符读取。
+     */
     private String execute(String name, String path, AgentDefinition definition, String input,
                            Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
                            Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
@@ -140,6 +145,10 @@ final class PaiCliWorkflowEngine {
         return last;
     }
 
+    /**
+     * 每个分支从同一状态副本出发，全部成功后按配置顺序合并变更。
+     * 任一分支失败时取消活动 Agent 并等待其他分支结束，避免会话锁释放后仍有分支写入。
+     */
     private String runParallel(WorkflowSpec workflow, String path, AgentDefinition definition, String input,
                                Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
                                Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
@@ -193,6 +202,7 @@ final class PaiCliWorkflowEngine {
         return last;
     }
 
+    /** 缺失 outputKey 时直接报错，避免把未解析占位符发送给模型。 */
     private String interpolate(String template, Map<String, String> state) {
         Matcher matcher = PLACEHOLDER.matcher(template);
         StringBuilder resolved = new StringBuilder();
@@ -218,6 +228,7 @@ final class PaiCliWorkflowEngine {
         emit(listener, eventLock, new PaiCliWorkflowEvent(kind, stage, event.content()));
     }
 
+    /** 并行分支共用同一监听器，串行回调以维持流式消息的完整性。 */
     private void emit(Consumer<PaiCliWorkflowEvent> listener, Object eventLock, PaiCliWorkflowEvent event) {
         if (listener != null) {
             synchronized (eventLock) {

@@ -182,6 +182,10 @@ public class AgentServiceController implements IAgentService {
         }
     }
 
+    /**
+     * 为每次流式请求建立独立 requestId、Emitter 与命令上下文，再异步运行 PaiCLI 工作流。
+     * 正常结束、异常和连接回调统一走 cleanupStream，避免审批或本地 Shell 遗留。
+     */
     @RequestMapping(value = "chat_stream", method = RequestMethod.POST)
     @Override
     public ResponseBodyEmitter chatStream(@RequestBody ChatRequestDTO requestDTO) {
@@ -267,6 +271,7 @@ public class AgentServiceController implements IAgentService {
         }
     }
 
+    /** 审批决定按 requestId 与 approvalId 定位；实际状态迁移由同步事件监听器完成。 */
     @Override
     @RequestMapping(value = "chat_stream/{requestId}/approval", method = RequestMethod.POST)
     public Response<ChatStreamApprovalResponseDTO> decideChatStreamApproval(
@@ -522,14 +527,15 @@ public class AgentServiceController implements IAgentService {
         agentStreamBridge.publishError(requestId, message);
     }
 
+    /**
+     * 用 cleaned 保证多种终止回调只清理一次，并仅按当前 requestId 取消审批、工作流与 Shell。
+     * 不在 Controller 线程清理工具线程的 ThreadLocal；该动作由工具适配器负责。
+     */
     private void cleanupStream(AtomicBoolean cleaned, CommandExecutionContext context, Future<?> task) {
         if (!cleaned.compareAndSet(false, true)) {
             return;
         }
 
-        // onCompletion/onTimeout/onError/客户端断开统一先取消当前请求仍处于 PENDING 的审批，
-        // 并销毁该请求独立持有的本地 Shell（ADR-004）；两项清理都幂等，正常完成时也必须安全。
-        // Shell 的 ThreadLocal 由工具适配器在调用线程的 finally 中清理；读写句柄由 ShellExecutor 专用线程持有。
         if (context != null) {
             try {
                 commandApprovalService.cancelByRequest(context.requestId());

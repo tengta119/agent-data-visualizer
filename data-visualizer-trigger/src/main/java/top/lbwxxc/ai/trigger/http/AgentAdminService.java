@@ -54,6 +54,7 @@ public class AgentAdminService implements IAgentAdminService {
         }
     }
 
+    /** 整份配置经工作流服务校验并原子替换；响应从新快照读取，不写回配置文件。 */
     @RequestMapping(value = "update_agent_config", method = RequestMethod.POST)
     @Override
     public Response<QueryCurrentAgentConfigResponse> updateAgentConfig(@RequestBody UpdateAgentConfigRequestDTO requestDTO) {

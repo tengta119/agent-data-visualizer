@@ -30,6 +30,7 @@ public final class DefaultPaiCliToolInstaller implements PaiCliToolInstaller {
         this.shellExecutor = shellExecutor;
     }
 
+    /** 仅安装当前 Agent 配置显式声明的工具；不启用 PaiCLI 的默认工具集。 */
     @Override
     public void install(EmbeddedAgent agent, List<AiAgentConfigTableVO.Module.ChatModel.ToolMcp> tools) {
         for (var config : tools) {
@@ -49,6 +50,10 @@ public final class DefaultPaiCliToolInstaller implements PaiCliToolInstaller {
         }
     }
 
+    /**
+     * 只向 Agent 暴露经过现有策略与审批链的 Shell 工具。
+     * 请求上下文在工具调用线程临时绑定，并在 finally 中清除，防止线程复用时串请求。
+     */
     private void installShell(EmbeddedAgent agent) {
         ObjectNode schema = JsonNodeFactory.instance.objectNode();
         schema.put("type", "object");
@@ -89,6 +94,10 @@ public final class DefaultPaiCliToolInstaller implements PaiCliToolInstaller {
         });
     }
 
+    /**
+     * 启动并初始化配置的 stdio MCP 服务，只注册它实际公布的工具。
+     * 连接归 Agent 持有，Agent 关闭时一并关闭；安装失败则立即释放连接。
+     */
     private void installStdio(EmbeddedAgent agent,
                               AiAgentConfigTableVO.Module.ChatModel.ToolMcp.StdioServerParameters config) {
         var parameters = config.getServerParameters();

@@ -25,6 +25,10 @@ final class PaiCliConfigCompiler {
     private static final List<String> DRAWING_SKILLS = List.of(
             "drawio-uml", "drawio-sequence", "drawio-flowchart", "drawio-architecture");
 
+    /**
+     * 将整份配置校验并编译为不可变的 Agent 定义集合。
+     * 任一表无效就拒绝整次更新，避免运行时发布只有部分 Agent 可用的快照。
+     */
     Map<String, AgentDefinition> compile(AiAgentAutoConfigProperties config) {
         if (config == null || config.getTables() == null || config.getTables().isEmpty()) {
             throw invalid("Agent tables must not be empty");
@@ -47,6 +51,7 @@ final class PaiCliConfigCompiler {
         return Map.copyOf(definitions);
     }
 
+    /** 校验单个 Agent 的模型、阶段、工作流与工具引用，并确定 Runner 入口。 */
     private AgentDefinition compileTable(String tableName, AiAgentConfigTableVO table) {
         if (table == null || table.getAgent() == null || table.getModule() == null) {
             throw invalid("Missing agent or module in table: " + tableName);
@@ -148,6 +153,7 @@ final class PaiCliConfigCompiler {
         return new AgentDefinition(agentId, model, Map.copyOf(stages), Map.copyOf(workflows), entry);
     }
 
+    /** 工作流之间允许嵌套引用，但递归环会让执行无法终止，必须在发布前拒绝。 */
     private void detectCycles(Map<String, WorkflowSpec> workflows) {
         Map<String, Integer> state = new HashMap<>();
         for (String name : workflows.keySet()) {

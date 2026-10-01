@@ -81,7 +81,10 @@ public final class EmbeddedAgent implements AutoCloseable {
         agent.setEmbeddedSystemInstruction(instruction);
     }
 
-    /** Reuses this Agent's conversation history; concurrent turns are serialized. */
+    /**
+     * 复用同一 Agent 的会话历史，并串行执行 turn。
+     * 每次执行单独绑定取消令牌；结束时解除绑定并关闭本次事件渲染器。
+     */
     public synchronized EmbeddedTurnResult run(String input, String submittedUserInput,
                                                Consumer<EmbeddedEvent> listener) {
         if (input == null || input.isBlank()) {
@@ -121,7 +124,10 @@ public final class EmbeddedAgent implements AutoCloseable {
         return run(input, input, null);
     }
 
-    /** Can be called from another thread while run() is blocked in a model request. */
+    /**
+     * 允许其他线程取消正在等待的模型调用。
+     * 若取消早于本次令牌安装，pendingCancel 会让紧接着开始的 run 立即收到取消信号。
+     */
     public void cancel() {
         CancellationToken token = currentRun.get();
         if (token != null) {

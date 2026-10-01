@@ -42,7 +42,10 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
         this.engine = new PaiCliWorkflowEngine(models, ForkJoinPool.commonPool(), tools);
     }
 
-    /** Validates and builds every agent before publishing one new query/execution snapshot. */
+    /**
+     * 先完整编译配置，再原子发布供查询与执行共用的快照。
+     * 旧会话保持原版本；空闲 Agent 可立即关闭，运行中的 Agent 在当前 turn 结束后关闭。
+     */
     public synchronized long install(AiAgentAutoConfigProperties config) {
         AiAgentAutoConfigProperties copy = copy(config);
         Map<String, AgentDefinition> definitions = compiler.compile(copy);
@@ -80,6 +83,7 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
         return snapshot().version();
     }
 
+    /** 会话绑定创建时的 agentId、userId 和配置版本；配置更新后旧会话不可继续运行。 */
     public String createSession(String agentId, String userId) {
         requireIdentity(agentId, userId);
         Snapshot snapshot = snapshot();
@@ -96,12 +100,16 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
         return run(agentId, userId, sessionId, input, null);
     }
 
-    /** A locked turn retains the config snapshot it entered with, even if install() publishes a new one. */
+    /** 普通调用与流式调用最终共用带上下文的 run，保持同一会话的执行规则一致。 */
     public PaiCliWorkflowResult run(String agentId, String userId, String sessionId, String input,
                                     Consumer<PaiCliWorkflowEvent> listener) {
         return run(agentId, userId, sessionId, input, null, listener);
     }
 
+    /**
+     * 校验会话归属与配置版本，并用会话锁串行执行 turn。
+     * 已进入的 turn 使用获取锁时的快照；请求上下文只用于当前 turn 的工具与取消关联。
+     */
     public PaiCliWorkflowResult run(String agentId, String userId, String sessionId, String input,
                                     CommandExecutionContext context, Consumer<PaiCliWorkflowEvent> listener) {
         requireIdentity(agentId, userId);
@@ -161,6 +169,7 @@ public final class PaiCliWorkflowRuntime implements IPaiCliWorkflowService {
         session.activeAgents.forEach(EmbeddedAgent::cancel);
     }
 
+    /** 仅取消 requestId 与会话当前请求一致的执行，避免迟到的清理误取消下一次请求。 */
     public void cancelRequest(CommandExecutionContext context) {
         if (context == null || context.requestId() == null || context.sessionId() == null) {
             return;
