@@ -43,11 +43,13 @@ public class CommandExecutionPolicyProperties {
     /**
      * 需要用户交互审批的本地命令前缀规则；默认空列表表示不产生审批。
      * 命中 allow 规则的命令优先直接执行，不会进入审批。
+     * 显式包含 "*" 时切换为全量一次性审批：不使用 allow 规则及简单命令结构限制，拒绝 rm 词。
      */
     private List<String> localPrompt = new ArrayList<>();
 
     /**
      * 需要用户交互审批的远程命令前缀规则；默认空列表表示不产生审批。
+     * "*" 同本地全量审批模式；remoteAllowedHosts 中的 "*" 表示任意非空远程 host。
      */
     private List<String> remotePrompt = new ArrayList<>();
 

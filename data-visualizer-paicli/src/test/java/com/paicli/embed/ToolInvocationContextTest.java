@@ -14,6 +14,27 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ToolInvocationContextTest {
     @Test
+    void hostShellBatchExecutesInOrderOnCallingThreadWithRequestContext() throws Exception {
+        ToolRegistry tools = ToolRegistry.restricted();
+        Thread caller = Thread.currentThread();
+        java.util.ArrayList<String> seen = new java.util.ArrayList<>();
+        tools.registerMcpToolOutput(new McpToolDescriptor("ShellExecutor", "execute", "mcp__ShellExecutor__execute",
+                "Host command requiring approval", JsonNodeFactory.instance.objectNode()), args -> {
+            assertEquals(caller, Thread.currentThread());
+            assertEquals("request-a", ToolInvocationContext.current());
+            seen.add(args);
+            return ToolOutput.text(args);
+        });
+        List<ToolRegistry.ToolInvocation> calls = List.of(
+                new ToolRegistry.ToolInvocation("one", "mcp__ShellExecutor__execute", "first"),
+                new ToolRegistry.ToolInvocation("two", "mcp__ShellExecutor__execute", "second"));
+        var results = ToolInvocationContext.call("request-a", () -> tools.executeTools(calls));
+        assertEquals(List.of("first", "second"), seen);
+        assertEquals(List.of("one", "two"), results.stream().map(ToolRegistry.ToolExecutionResult::id).toList());
+        assertNull(ToolInvocationContext.current());
+    }
+
+    @Test
     void parallelToolsSeeOnlyTheirOwnExplicitRequestContext() throws Exception {
         ToolRegistry tools = ToolRegistry.restricted();
         tools.registerMcpToolOutput(new McpToolDescriptor("test", "identity", "mcp__test__identity",

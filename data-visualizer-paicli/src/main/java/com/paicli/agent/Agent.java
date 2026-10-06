@@ -9,6 +9,7 @@ import com.paicli.lsp.LspDiagnosticReport;
 import com.paicli.memory.AutoCompactionManager;
 import com.paicli.memory.ExplicitMemoryHints;
 import com.paicli.memory.MemoryManager;
+import com.paicli.policy.AuditLog;
 import com.paicli.prompt.PromptAssembler;
 import com.paicli.prompt.PromptContext;
 import com.paicli.prompt.PromptMode;
@@ -866,15 +867,26 @@ public class Agent {
         }
 
         if (invocations.size() > 1) {
-            log.info("Executing {} tool calls in parallel (iteration={})", invocations.size(), iteration);
+            log.info("Executing batch of {} tool calls (iteration={})", invocations.size(), iteration);
         }
         List<ToolExecutionResult> results = turnToolPolicy.execute(toolRegistry, invocations, toolExposure);
         for (ToolExecutionResult result : results) {
             log.debug("Tool result preview [{}]: {}", result.name(), preview(result.result(), 300));
             emitToolResultSummary(result);
         }
-        if (failOnToolError && results.stream().anyMatch(result -> !result.successful())) {
-            throw new AgentRunException(AgentRunException.Reason.TOOL, "A tool call failed");
+        if (failOnToolError) {
+            for (ToolExecutionResult result : results) {
+                if (!result.successful()) {
+                    if (CancellationContext.isCancelled()) {
+                        throw new AgentRunException(AgentRunException.Reason.CANCELLED, "Agent run cancelled");
+                    }
+                    // 先脱敏再截断；不附带 argumentsJson，避免将原始命令参数发送给调用方。
+                    String detail = preview(AuditLog.sanitize(result.result()), 500);
+                    String message = "Tool call failed [" + result.name() + "]: " + detail;
+                    log.warn("{}", message);
+                    throw new AgentRunException(AgentRunException.Reason.TOOL, message);
+                }
+            }
         }
         return results;
     }

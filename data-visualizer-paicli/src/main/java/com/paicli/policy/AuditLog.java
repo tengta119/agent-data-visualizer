@@ -128,7 +128,8 @@ public class AuditLog {
         return sanitized.length() <= MAX_FIELD_CHARS ? sanitized : sanitized.substring(0, MAX_FIELD_CHARS) + "...(truncated)";
     }
 
-    static String sanitize(String s) {
+    /** Redacts common credentials before audit or host-visible failure reporting. */
+    public static String sanitize(String s) {
         if (s == null) return null;
         String sanitized = s.replaceAll("(?i)Bearer\\s+[^\\s\"'}]+", "Bearer ***");
         sanitized = sanitized.replaceAll(
@@ -136,6 +137,9 @@ public class AuditLog {
                 "$1***$3");
         sanitized = sanitized.replaceAll(
                 "(?i)(\\b(?:token|key|password|secret|authorization)\\b\\s*[:=]\\s*)([^\\s,}]+)",
+                "$1***");
+        sanitized = sanitized.replaceAll(
+                "(?i)(--?(?:password|passwd|token|secret|api[-_]?key)\\s*(?:=|\\s)\\s*)(?:\"[^\"]*\"|'[^']*'|[^\\s,}]+)",
                 "$1***");
         return sanitized;
     }

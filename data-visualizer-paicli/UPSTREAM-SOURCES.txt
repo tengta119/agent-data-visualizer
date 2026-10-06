@@ -3,6 +3,12 @@ source=D:\project\erge2\paicli\paicli
 commit=36a26776b60b1a7e02a91209a81e8c4412a863cb
 files=169
 
+# Local adaptation: Agent.java preserves redacted bounded tool failure details and
+# distinguishes cancellation from tool failure; AuditLog.java shares credential
+# redaction with host-visible failure reporting, including command-line secrets.
+# Local adaptation: ToolRegistry.java serializes batches containing the host
+# ShellExecutor tool so commands do not compete for one request's approval slot.
+
 src/main/java/com/paicli/agent/Agent.java
 src/main/java/com/paicli/agent/AgentBudget.java
 src/main/java/com/paicli/browser/BrowserAuditMetadata.java

@@ -1,5 +1,6 @@
 package top.lbwxxc.ai.domain.agent.service.paicli;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -57,20 +58,41 @@ public final class DefaultPaiCliToolInstaller implements PaiCliToolInstaller {
     private void installShell(EmbeddedAgent agent) {
         ObjectNode schema = JsonNodeFactory.instance.objectNode();
         schema.put("type", "object");
+        schema.put("additionalProperties", false);
         ObjectNode properties = schema.putObject("properties");
-        properties.putObject("command").put("type", "string");
-        properties.putObject("commandType").put("type", "string");
-        properties.putObject("hostName").put("type", "string");
+        properties.putObject("command").put("type", "string").put("minLength", 1)
+                .put("description", "Command text, subject to the server command policy and one-time approval. Complex shell syntax may be rejected depending on policy. Never invoke rm.");
+        ObjectNode commandType = properties.putObject("commandType");
+        commandType.put("type", "string");
+        commandType.putArray("enum").add("local").add("remote");
+        commandType.put("description", "Execution target, NOT shell dialect: local = backend machine; remote = connected approved host. Never use cmd, shell, bash or powershell here.");
+        properties.putObject("hostName").put("type", "string")
+                .put("description", "For local, omit or use an empty string; do not use localhost or local. For remote, use a host in the server allowlist.");
         schema.putArray("required").add("command").add("commandType");
         agent.registerMcpToolOutput(new McpToolDescriptor("ShellExecutor", "execute",
                 McpToolDescriptor.namespaced("ShellExecutor", "execute"),
-                "Execute a local or remote command through the configured command policy and one-time approval.",
+                "Execute a local or remote command through the configured command policy and one-time approval. "
+                        + "The backend OS is " + System.getProperty("os.name")
+                        + ". Local execution prefers PowerShell (pwsh), then bash/sh if unavailable. "
+                        + "commandType selects the target, not the shell. Prefer simple commands; do not assume Windows cmd or Linux syntax.",
                 schema), arguments -> {
             if (CancellationContext.isCancelled()) {
                 return ToolOutput.failure("Command not executed: request cancelled");
             }
             try {
-                ShellExecutor.CommandRequest request = mapper.readValue(arguments, ShellExecutor.CommandRequest.class);
+                JsonNode args = mapper.readTree(arguments);
+                if (args == null || !args.isObject()) {
+                    return ToolOutput.failure("Invalid command tool arguments: expected a JSON object");
+                }
+                if (!args.path("command").isTextual() || args.path("command").asText().isBlank()) {
+                    return ToolOutput.failure("Invalid command tool arguments: command must be a non-empty string");
+                }
+                String target = args.path("commandType").asText();
+                if (!args.path("commandType").isTextual()
+                        || (!"local".equals(target) && !"remote".equals(target))) {
+                    return ToolOutput.failure("Invalid command tool arguments: commandType must be local or remote (execution target, not cmd/shell/bash/powershell)");
+                }
+                ShellExecutor.CommandRequest request = mapper.treeToValue(args, ShellExecutor.CommandRequest.class);
                 Object current = ToolInvocationContext.current();
                 CommandExecutionContext context = current instanceof CommandExecutionContext scoped ? scoped : null;
                 if (context != null) {
@@ -89,7 +111,8 @@ public final class DefaultPaiCliToolInstaller implements PaiCliToolInstaller {
                     CommandExecutionContextHolder.clear();
                 }
             } catch (IOException error) {
-                throw new IllegalArgumentException("Invalid command tool arguments", error);
+                // 不回传 Jackson 原始异常，其中可能包含模型传入的命令与凭据。
+                return ToolOutput.failure("Invalid command tool arguments: check JSON fields command, commandType (local/remote) and hostName");
             }
         });
     }

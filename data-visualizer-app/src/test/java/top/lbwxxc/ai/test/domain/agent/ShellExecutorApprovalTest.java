@@ -134,6 +134,23 @@ class ShellExecutorApprovalTest {
     }
 
     @Test
+    void wildcardCommandWaitsForOneTimeApprovalBeforeRemoteExecution() throws Exception {
+        newExecutor();
+        properties.setRemoteAllow(List.of());
+        properties.setRemotePrompt(List.of("*"));
+        properties.setRemoteAllowedHosts(List.of("*"));
+        Future<ShellExecutor.CommandResponse> waiting = executeWithContext("req-all",
+                new ShellExecutor.CommandRequest("systeminfo | findstr CPU", ShellExecutor.CommandTypeEnum.remote, "client-new"));
+        awaitUntil(() -> !store.findByRequestId("req-all").isEmpty(), 2000);
+        PendingCommandApproval approval = store.findByRequestId("req-all").get(0);
+        assertEquals(0, actionCalls.get());
+        assertFalse(waiting.isDone());
+        approvalService.resolve("req-all", approval.getApprovalId(), CommandApprovalDecision.APPROVE_ONCE);
+        assertEquals("success", waiting.get(3, TimeUnit.SECONDS).getResponseStatus());
+        assertEquals(1, actionCalls.get());
+    }
+
+    @Test
     void allowCommandExecutesWithoutApproval() {
         newExecutor();
         ShellExecutor.CommandResponse response = executor.execute(

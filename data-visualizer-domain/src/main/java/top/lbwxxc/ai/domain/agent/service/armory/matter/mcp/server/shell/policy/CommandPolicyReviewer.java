@@ -8,6 +8,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Service
 public class CommandPolicyReviewer {
@@ -17,6 +18,8 @@ public class CommandPolicyReviewer {
     };
     private static final Set<String> FORBIDDEN_COMMANDS = Set.of("rm");
     private static final Set<String> FORBIDDEN_SUBCOMMANDS = Set.of("rm");
+    private static final Pattern RM_WORD = Pattern.compile(
+            "(?i)(?<![\\p{L}\\p{N}_])rm(?:\\.exe)?(?![\\p{L}\\p{N}_])");
 
     private final CommandExecutionPolicyProperties properties;
 
@@ -34,14 +37,33 @@ public class CommandPolicyReviewer {
         if (request.getCommandType() == null) {
             return forbidden("命令类型不能为空", Collections.emptyList());
         }
+        if (request.getCommand().indexOf('\0') >= 0) {
+            return forbidden("命令不能包含 NUL 字符", Collections.emptyList());
+        }
 
         String host = request.getHostName() == null ? "" : request.getHostName().trim();
         if (request.getCommandType() == ShellExecutor.CommandTypeEnum.local && !host.isEmpty()) {
             return forbidden("local 命令不允许指定远程 host", Collections.emptyList());
         }
         if (request.getCommandType() == ShellExecutor.CommandTypeEnum.remote
-                && !properties.getRemoteAllowedHosts().contains(host)) {
+                && (host.isEmpty() || (!properties.getRemoteAllowedHosts().contains("*")
+                && !properties.getRemoteAllowedHosts().contains(host)))) {
             return forbidden("远程 host 不在允许列表中", Collections.emptyList());
+        }
+
+        boolean localCommand = request.getCommandType() == ShellExecutor.CommandTypeEnum.local;
+        List<String> allowRules = localCommand ? properties.getLocalAllow() : properties.getRemoteAllow();
+        List<String> promptRules = localCommand ? properties.getLocalPrompt() : properties.getRemotePrompt();
+        if (promptRules != null && promptRules.stream().anyMatch(rule -> "*".equals(rule == null ? "" : rule.trim()))) {
+            // 显式全量审批模式审查整段命令，支持管道、重定向及多行脚本。
+            // 同时检查简单引号拼接/转义后的文本，避免 r'm'、r\m 绕过 rm 词匹配。
+            String command = request.getCommand().trim();
+            String joined = command.replace("'", "").replace("\"", "").replace("\\", "");
+            if (RM_WORD.matcher(command).find() || RM_WORD.matcher(joined).find()) {
+                return forbidden("命令包含禁止的 rm 命令或词", List.of(command));
+            }
+            return new CommandPolicyReview(CommandPolicyDecision.PROMPT,
+                    "全量审批模式：命令需要用户允许一次后执行", List.of(command));
         }
 
         List<String> commands = splitCommands(request.getCommand().trim());
@@ -49,9 +71,6 @@ public class CommandPolicyReviewer {
             return forbidden("命令包含不支持或无法解析的 shell 结构", Collections.emptyList());
         }
 
-        boolean localCommand = request.getCommandType() == ShellExecutor.CommandTypeEnum.local;
-        List<String> allowRules = localCommand ? properties.getLocalAllow() : properties.getRemoteAllow();
-        List<String> promptRules = localCommand ? properties.getLocalPrompt() : properties.getRemotePrompt();
         boolean promptMatched = false;
         for (String subCommand : commands) {
             List<String> tokens = tokenize(subCommand);

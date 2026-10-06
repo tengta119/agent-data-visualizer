@@ -181,13 +181,17 @@ sequenceDiagram
 
 ### 6.4 Shell 工具与远程命令（仅在 Agent 调用该工具时）
 
-默认 YAML 的 `ShellExecutor` 被映射为受限 PaiCLI 工具 `mcp__ShellExecutor__execute`，仍调用原 `ShellExecutor`。旧外部 YAML 使用的 `ShellExecutorToolCallbackProvider` 名称作为兼容别名保留；两者均不创建 Spring AI 工具回调。命令在真正执行前统一经过策略审查（Allow/Prompt/Forbidden）：
+默认 YAML 的 `ShellExecutor` 被映射为受限 PaiCLI 工具 `mcp__ShellExecutor__execute`，仍调用原 `ShellExecutor`。旧外部 YAML 使用的 `ShellExecutorToolCallbackProvider` 名称作为兼容别名保留；两者均不创建 Spring AI 工具回调。命令在真正执行前统一经过策略审查；普通前缀规则模式的决策如下（全量审批模式见下文）：
+
+工具 schema 明确将 `commandType` 限定为 `local|remote`（执行目标，不是 `cmd/bash/shell` 等 shell 类型），本地 `hostName` 应省略或为空，并向模型说明后端 OS 与 shell 选择顺序。Shell 适配器在调用执行器前校验参数；参数错误不执行命令，也不返回包含原始参数的 Jackson 异常。包含 `mcp__ShellExecutor__execute` 的工具批次按原顺序串行执行，避免同请求多个命令竞争审批槽位。
 
 - `Allow`：命中本地/远程允许规则，直接执行；
 - `Prompt`：命中可配置的审批规则，进入交互审批（见 6.3）；审批是每次命令的一次性用户决定，不是授权或策略修改；
 - `Forbidden`：未命中任何规则、无法解析、包含危险控制结构、host 不在白名单等，直接拒绝且不可被审批绕过。
 
-决策按 `Allow < Prompt < Forbidden` 合并：复合命令任一子命令 Forbidden 则整体 Forbidden。`CommandExecutionPolicyProperties`（前缀 `command.execution.policy`）保存 allow/prompt 规则、host 白名单与审批超时；默认 prompt 规则为空，即默认不产生审批。
+普通前缀规则模式按 `Allow < Prompt < Forbidden` 合并：复合命令任一子命令 Forbidden 则整体 Forbidden。`CommandExecutionPolicyProperties`（前缀 `command.execution.policy`）的类默认 prompt 规则为空；显式配置 prompt 为 `['*']` 时进入全量一次性审批模式，忽略直接执行规则，不使用普通模式的管道/重定向/多行结构限制，整段命令含独立 `rm` 词（大小写不敏感，包括路径及 `rm.exe`）则拒绝，其余有效命令均 Prompt。`format` 等单词不会因包含 rm 子串被拒绝。该检查是文本词匹配与简单引号/转义归一化，不是完整 shell 解析或沙箱。
+
+当前 `application-dev.yml` 显式清空 local/remote allow，local/remote prompt 均为 `['*']`，remote host 列表也为 `['*']`（任意非空 host，实际执行仍需客户端在线）。命令非空、长度、NUL、类型和 host 一致性校验继续生效；无流式通道、审批拒绝/过期/取消及并发容量限制仍阻止执行。test/prod 未配置此模式，继续采用类默认策略。决定见 ADR-009。
 
 `ShellExecutor` 按**请求作用域**持有本地 shell 进程（ADR-004）：作用域 key 默认为当前流式请求的 `requestId`，且只在 `LocalShellScope.resolve()` 一处解析，因此同一请求内的多条本地命令复用同一进程、请求之间互不共享。作用域内的 shell 依次尝试 `pwsh.exe`、`pwsh`、`bash`、`sh`。`clients` 是查询当前 Netty 客户端的特殊命令，不触碰本地 shell。`remote` 类型命令经 `BusinessPort` 发送至 Netty 客户端，按 UUID 请求 ID 等待最长 30 秒。
 
@@ -241,6 +245,7 @@ Python `gateway-socket-client` 代码会重连到 TCP 服务端，并将接收�
 
 - 两个 HTTP Controller 在每个端点内捕获 `AppException` 和通用 `Exception`，并返回统一 `Response<T>` 错误码；未发现全局 `@ControllerAdvice` / `@ExceptionHandler`。
 - `chat_stream` 返回的是 `ResponseBodyEmitter`，执行中的异常通过 `error` 流消息和清理逻辑处理；在 Emitter 注册前发生的异常只会结束 Emitter，响应契约不同于普通 JSON 接口。
+- PaiCLI 工具失败异常保留首个失败工具名称与脱敏、限长的结果说明，不附带原始调用参数；工具失败时若取消上下文已取消，则归类为取消异常。
 - Agent 启动装配失败仅记录日志并允许 Spring Boot 继续运行。因此应用可能健康启动但没有已注册 Agent。
 - Netty 启动、协议 JSON 解析、连接异常会记录日志；发送命令的失败或超时转为 `RuntimeException`。
 - 未发现 Spring Retry、Resilience4j、熔断、限流、降级或面向外部模型/MCP 的重试逻辑。

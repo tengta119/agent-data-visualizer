@@ -1,5 +1,6 @@
 package top.lbwxxc.ai.test.paicli;
 
+import com.paicli.embed.EmbeddedTurnException;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyEmitter;
@@ -33,6 +34,34 @@ import static org.mockito.Mockito.times;
 
 class PaiCliControllerContractTest {
     private static final String GRAPH = "{\"type\":\"drawio_graph\",\"nodes\":[{\"id\":\"n1\",\"label\":\"Start\",\"kind\":\"start\"}],\"edges\":[]}";
+
+    @Test
+    void streamedToolFailureKeepsDiagnosticAndRequestAssociation() throws Exception {
+        IChatService chat = mock(IChatService.class);
+        RecordingBridge bridge = new RecordingBridge();
+        AgentServiceController controller = new AgentServiceController();
+        ReflectionTestUtils.setField(controller, "chatService", chat);
+        ReflectionTestUtils.setField(controller, "agentStreamBridge", bridge);
+        ReflectionTestUtils.setField(controller, "commandApprovalService", mock(CommandApprovalService.class));
+        ReflectionTestUtils.setField(controller, "shellExecutor", mock(ShellExecutor.class));
+        ChatRequestDTO request = new ChatRequestDTO();
+        request.setAgentId("agent");
+        request.setUserId("user");
+        request.setSessionId("session");
+        request.setMessage("query hardware");
+        String detail = "Tool call failed [mcp__ShellExecutor__execute]: commandType must be local or remote";
+        when(chat.handleMessageStream(eq("agent"), eq("user"), eq("session"),
+                any(CommandExecutionContext.class), eq("query hardware"), any()))
+                .thenThrow(new EmbeddedTurnException(EmbeddedTurnException.Kind.TOOL, detail, null));
+
+        controller.chatStream(request);
+        assertTrue(bridge.failed.await(3, TimeUnit.SECONDS));
+        AgentStreamResponseDTO error = bridge.events.stream()
+                .filter(event -> "error".equals(event.getType())).findFirst().orElseThrow();
+        assertEquals(detail, error.getContent());
+        assertTrue(error.getRequestId() != null && !error.getRequestId().isBlank());
+        assertEquals(0, bridge.events.stream().filter(event -> "result".equals(event.getType())).count());
+    }
 
     @Test
     void synchronousAndStreamedPathsConvertTheSameFinalGraph() throws Exception {
@@ -97,6 +126,7 @@ class PaiCliControllerContractTest {
     private static final class RecordingBridge extends AgentStreamBridge {
         private final List<AgentStreamResponseDTO> events = new CopyOnWriteArrayList<>();
         private final CountDownLatch done = new CountDownLatch(1);
+        private final CountDownLatch failed = new CountDownLatch(1);
         private final List<String> cleared = new CopyOnWriteArrayList<>();
 
         @Override
@@ -108,6 +138,9 @@ class PaiCliControllerContractTest {
             events.add(event);
             if ("done".equals(event.getType())) {
                 done.countDown();
+            }
+            if ("error".equals(event.getType())) {
+                failed.countDown();
             }
         }
 

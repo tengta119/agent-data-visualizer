@@ -1448,7 +1448,7 @@ public class ToolRegistry {
      * 执行同一轮 LLM 返回的多个工具调用。
      *
      * 结果按传入顺序返回，调用方可以安全地按原 tool_call 顺序回灌消息历史。
-     * 含浏览器工具的批次按原顺序串行，避免同一浏览器会话内的页面状态互相覆盖；
+     * 含浏览器或宿主 ShellExecutor 工具的批次按原顺序串行，避免页面状态覆盖及同请求审批槽位竞争；
      * 其余批次并行执行，超时后取消未完成任务，已完成工具不受影响。
      */
     public List<ToolExecutionResult> executeTools(List<ToolInvocation> invocations) {
@@ -1467,7 +1467,8 @@ public class ToolRegistry {
             return List.of(ToolExecutionResult.completed(invocation, output, elapsedMillis(startedAt)));
         }
         if (invocations.stream().anyMatch(invocation ->
-                TurnToolPolicy.isBrowserToolName(invocation.name()))) {
+                TurnToolPolicy.isBrowserToolName(invocation.name())
+                        || "mcp__ShellExecutor__execute".equals(invocation.name()))) {
             List<ToolExecutionResult> results = new ArrayList<>(invocations.size());
             for (ToolInvocation invocation : invocations) {
                 if (CancellationContext.isCancelled()) {

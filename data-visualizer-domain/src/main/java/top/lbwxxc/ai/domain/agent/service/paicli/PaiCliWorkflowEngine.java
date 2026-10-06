@@ -148,10 +148,10 @@ final class PaiCliWorkflowEngine {
      * 任一分支失败时取消活动 Agent 并等待其他分支结束，避免会话锁释放后仍有分支写入。
      */
     private String runParallel(WorkflowSpec workflow, String path, AgentDefinition definition, String input,
-                               Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
-                               Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
-                               Consumer<PaiCliWorkflowEvent> listener,
-                               Object eventLock) {
+                                Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
+                                Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
+                                Consumer<PaiCliWorkflowEvent> listener,
+                                Object eventLock) {
         Map<String, String> base = new LinkedHashMap<>(state);
         List<CompletableFuture<BranchResult>> futures = new ArrayList<>();
         AtomicBoolean aborted = new AtomicBoolean();

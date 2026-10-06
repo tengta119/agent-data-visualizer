@@ -16,6 +16,51 @@ class CommandPolicyReviewerTest {
     private final CommandPolicyReviewer reviewer = new CommandPolicyReviewer(properties);
 
     @Test
+    void wildcardPromptRequiresApprovalForEveryValidLocalCommandIncludingShellSyntax() {
+        properties.setLocalPrompt(List.of("*"));
+        for (String command : List.of("pwd", "clients", "systeminfo", "Get-CimInstance Win32_Processor",
+                "systeminfo | findstr CPU", "echo hello > output.txt", "echo first\necho second", "echo format")) {
+            assertEquals(CommandPolicyDecision.PROMPT,
+                    reviewer.review(request(command, ShellExecutor.CommandTypeEnum.local, "")).getDecision(), command);
+        }
+    }
+
+    @Test
+    void wildcardPromptRejectsRmWordsEvenInsidePipelinesOrQuotedScripts() {
+        properties.setLocalPrompt(List.of("*"));
+        for (String command : List.of("rm -rf tmp", "pwd && RM tmp", "/bin/rm tmp", "C:\\tools\\rm.exe tmp",
+                "echo hi | rm tmp", "bash -c 'rm tmp'", "echo rm", "r'm' tmp", "r\\m tmp")) {
+            assertEquals(CommandPolicyDecision.FORBIDDEN,
+                    reviewer.review(request(command, ShellExecutor.CommandTypeEnum.local, "")).getDecision(), command);
+        }
+    }
+
+    @Test
+    void wildcardRemotePromptAllowsAnyNonEmptyHostOnlyWhenExplicitlyConfigured() {
+        properties.setRemotePrompt(List.of("*"));
+        assertEquals(CommandPolicyDecision.FORBIDDEN,
+                reviewer.review(request("systeminfo", ShellExecutor.CommandTypeEnum.remote, "client-a")).getDecision());
+        properties.setRemoteAllowedHosts(List.of("*"));
+        assertEquals(CommandPolicyDecision.PROMPT,
+                reviewer.review(request("systeminfo | findstr CPU", ShellExecutor.CommandTypeEnum.remote, "client-a")).getDecision());
+        assertEquals(CommandPolicyDecision.FORBIDDEN,
+                reviewer.review(request("rm tmp", ShellExecutor.CommandTypeEnum.remote, "client-a")).getDecision());
+        assertEquals(CommandPolicyDecision.FORBIDDEN,
+                reviewer.review(request("pwd", ShellExecutor.CommandTypeEnum.remote, "")).getDecision());
+    }
+
+    @Test
+    void wildcardPromptStillRejectsInvalidRequestMetadata() {
+        properties.setLocalPrompt(List.of("*"));
+        for (String command : List.of("", "echo \0", "x".repeat(properties.getMaxCommandLength() + 1))) {
+            assertEquals(CommandPolicyDecision.FORBIDDEN,
+                    reviewer.review(request(command, ShellExecutor.CommandTypeEnum.local, "")).getDecision());
+        }
+        assertEquals(CommandPolicyDecision.FORBIDDEN,
+                reviewer.review(request("pwd", ShellExecutor.CommandTypeEnum.local, "localhost")).getDecision());
+    }
+
+    @Test
     void allowsOnlyConfiguredLocalCommand() {
         ShellExecutor.CommandRequest request = request("pwd", ShellExecutor.CommandTypeEnum.local, "");
 

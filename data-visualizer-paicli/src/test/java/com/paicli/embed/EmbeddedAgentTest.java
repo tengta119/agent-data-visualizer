@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.paicli.llm.LlmClient;
 import com.paicli.mcp.protocol.McpToolDescriptor;
 import com.paicli.tool.ToolOutput;
+import com.paicli.runtime.CancellationContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -98,6 +99,40 @@ class EmbeddedAgentTest {
                 () -> agent.run("draw"));
 
         assertEquals(EmbeddedTurnException.Kind.TOOL, error.kind());
+        assertTrue(error.getMessage().contains("mcp__host__lookup"));
+        assertTrue(error.getMessage().contains("rejected"));
+    }
+
+    @Test
+    void failedToolDetailRedactsCredentialsBeforeReachingHost() {
+        FakeClient client = new FakeClient();
+        client.callTool = true;
+        try (EmbeddedAgent agent = new EmbeddedAgent(client, "Return a diagram.")) {
+            agent.registerMcpToolOutput(new McpToolDescriptor("host", "lookup", "mcp__host__lookup",
+                    "Lookup", new ObjectMapper().createObjectNode()), ignored -> ToolOutput.failure(
+                    "denied --token cli-secret password=json-secret Authorization: Bearer bearer-secret"));
+            EmbeddedTurnException error = assertThrows(EmbeddedTurnException.class, () -> agent.run("draw"));
+            assertEquals(EmbeddedTurnException.Kind.TOOL, error.kind());
+            assertTrue(error.getMessage().contains("denied"));
+            assertFalse(error.getMessage().contains("cli-secret"));
+            assertFalse(error.getMessage().contains("json-secret"));
+            assertFalse(error.getMessage().contains("bearer-secret"));
+        }
+    }
+
+    @Test
+    void cancellationDuringToolCallIsNotReportedAsToolFailure() {
+        FakeClient client = new FakeClient();
+        client.callTool = true;
+        try (EmbeddedAgent agent = new EmbeddedAgent(client, "Return a diagram.")) {
+            agent.registerMcpToolOutput(new McpToolDescriptor("host", "lookup", "mcp__host__lookup",
+                    "Lookup", new ObjectMapper().createObjectNode()), ignored -> {
+                CancellationContext.current().cancel();
+                return ToolOutput.failure("Command not executed: request cancelled");
+            });
+            EmbeddedTurnException error = assertThrows(EmbeddedTurnException.class, () -> agent.run("draw"));
+            assertEquals(EmbeddedTurnException.Kind.CANCELLED, error.kind());
+        }
     }
 
     @Test

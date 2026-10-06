@@ -137,6 +137,8 @@ sequenceDiagram
 
 **异常：** 模型/工具错误会尽量以 `error` 推送；Emitter 写入失败、超时或早期异常可能使浏览器只看到连接失败。用户点击“停止”会触发服务端清理并向 PaiCLI 发出取消信号；已经交给外部进程或远程主机的副作用不保证撤销。
 
+工具失败时，流式错误包含首个失败工具名称及脱敏、限长的原因，便于区分参数错误、策略拒绝和执行失败。Shell 的 `commandType` 仅接受 `local|remote`；`cmd/bash/shell` 等值会被判为参数错误，命令不执行。
+
 ### 4.6 查看与更新运行中 Agent 配置
 
 **业务目标：** 查看当前生效的 Agent 配置，或在不重启应用的情况下提交新配置重新装配 Agent。
@@ -162,12 +164,12 @@ flowchart LR
 
 ### 4.7 Agent 调用本机或远程命令（条件流程，含策略审查与交互审批）
 
-**业务目标：** 当模型认为需要检索本地环境或执行命令时，为 Agent 提供工具结果。默认 Agent 配置已提供 `ShellExecutor` 工具，但是否调用由模型决定。命令执行前必须先通过服务端策略审查（TASK-002 默认拒绝 + TASK-003 交互审批）。
+**业务目标：** 当模型认为需要检索本地环境或执行命令时，为 Agent 提供工具结果。默认 Agent 配置已提供 `ShellExecutor` 工具，但是否调用由模型决定。命令执行前必须先通过服务端策略审查与交互审批；当前 dev 配置要求所有有效的非 rm 命令均由用户允许一次。
 
 **前置条件：** Agent 已被配置该工具；应用环境存在 `pwsh.exe`、`pwsh`、`bash` 或 `sh` 中至少一个。远程执行还需对应 IP 的 TCP 客户端在线。命中审批规则的命令还要求调用来自有效的流式请求（已生成并注册 requestId）。
 
 **主路径：**
-1. 审查：local/remote 命令统一由策略审查，决策三态 `Allow`（命中允许规则直接执行）/ `Prompt`（命中可配置审批规则）/ `Forbidden`（未命中规则、无法解析、危险结构、host 不在白名单等硬性拒绝）。决策按 `Allow < Prompt < Forbidden` 合并，`Forbidden` 不可被审批绕过。
+1. 审查：local/remote 命令统一由策略审查。普通模式按 allow/prompt 前缀和命令结构判断；显式 prompt `['*']` 切换为全量审批模式：独立 `rm` 命令或词直接拒绝，其他有效命令（含管道、重定向、多行）进入 Prompt，不通过 allow 直接执行。当前 dev 对 local/remote 均启用该模式，并允许选择任意非空、实际在线的远程 host。无效参数和审批容量限制仍会拒绝；Forbidden 不可被审批绕过。
 2. `Prompt`：服务端创建内存待审批记录（approvalId 绑定 requestId、命令类型、host、命令摘要），通过当前流式连接发送 `approval_required`，等待 Agent 工具线程返回决定。
 3. 用户在前端选择“允许一次”或“拒绝”，调用 `POST /api/v1/chat_stream/{requestId}/approval`；后端校验 `requestId + approvalId`、待审批状态与有效期后，把状态原子迁移到 `APPROVED/REJECTED`。
 4. 批准后重新校验命令摘要、host 白名单与当前策略；二次审查通过才执行 local/remote 命令，批准不等于执行成功。
@@ -212,7 +214,7 @@ stateDiagram-v2
 6. **流式接口结果有 20 分钟传输窗口。** 超时后 Emitter、审批与请求 shell 清理，向 PaiCLI 传递取消信号；已经发生的外部副作用不保证撤销。
 7. **本机/远程命令仅在 Agent 工具调用时发生。** 业务 API 没有独立的 shell 命令接口；默认模型可见该工具，实际调用由模型决定。
 8. **运行期更新完整替换 Agent 快照。** 更新请求仅有 `enabled` 和 `tables`；配置先校验再原子切换。新配置中移除的 Agent 立即从列表和创建会话入口消失；旧版本会话在下次执行时失效。
-9. **命令决策三态合并且默认拒绝。** 审查决策 `Allow < Prompt < Forbidden`：任一子命令 `Forbidden` 整体 `Forbidden`；存在 `Prompt` 且无 `Forbidden` 时整体 `Prompt`；未命中任何允许或审批规则的命令仍被拒绝，`Forbidden` 不可被审批绕过。
+9. **命令策略由显式配置选择。** 普通模式默认拒绝未命中 allow/prompt 的命令，决策按 `Allow < Prompt < Forbidden` 合并。全量审批模式（prompt 含 `*`）拒绝独立 rm 词，其余有效命令必须审批；当前 dev 使用该模式，test/prod 仍使用类默认规则。同批次 Shell 调用按顺序逐条执行与审批，避免单请求审批槽位竞争。
 10. **Prompt 只在有效流式请求中产生一次性审批。** 请求上下文显式传至 PaiCLI 工具线程；Shell 入口缺少有效上下文或流式连接已不存在时 Prompt 安全失败，不等待也不执行。一次审批对应唯一 `approvalId`，并绑定唯一 `requestId`、命令类型、host 与命令摘要，前端不能借审批修改命令内容。
 11. **审批决定只能一次生效。** `approve_once/reject` 经 `PENDING → APPROVED/REJECTED` 原子迁移；重复决定不能改变已确定的终态，错误 approvalId/requestId 不影响其他审批；批准不等于命令执行成功。
 12. **审批批准后必须二次审查。** 重新校验审批状态、requestId、命令摘要、host 与当前策略；二次审查为 `Forbidden` 或请求已取消/清理时不执行。
