@@ -301,9 +301,7 @@ public final class TurnToolPolicy {
     }
 
     /** Execute allowed calls, return synthetic tool results for denials, and learn typed search-result URLs. */
-    public List<ToolExecutionResult> execute(ToolRegistry registry,
-                                             List<ToolInvocation> invocations,
-                                             ToolExposure exposure) {
+    public List<ToolExecutionResult> execute(ToolRegistry registry, List<ToolInvocation> invocations, ToolExposure exposure) {
         Objects.requireNonNull(registry, "registry");
         if (invocations == null || invocations.isEmpty()) {
             return List.of();

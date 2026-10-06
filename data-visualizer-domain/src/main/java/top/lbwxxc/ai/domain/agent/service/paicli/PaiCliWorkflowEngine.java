@@ -40,14 +40,14 @@ final class PaiCliWorkflowEngine {
     }
 
     PaiCliWorkflowResult run(AgentDefinition definition, String input, Map<String, EmbeddedAgent> stageAgents,
-                             Set<EmbeddedAgent> activeAgents, Consumer<PaiCliWorkflowEvent> listener) {
+                            Set<EmbeddedAgent> activeAgents, Consumer<PaiCliWorkflowEvent> listener) {
         return run(definition, input, stageAgents, activeAgents, null, listener);
     }
 
     /** 为本次 turn 创建独立输出状态，再从配置的 Runner 入口执行工作流。 */
     PaiCliWorkflowResult run(AgentDefinition definition, String input, Map<String, EmbeddedAgent> stageAgents,
-                             Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
-                             Consumer<PaiCliWorkflowEvent> listener) {
+                            Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
+                            Consumer<PaiCliWorkflowEvent> listener) {
         Map<String, String> state = new LinkedHashMap<>();
         Object eventLock = new Object();
         String last = execute(definition.entry(), "root", definition, input, state,
@@ -60,10 +60,10 @@ final class PaiCliWorkflowEngine {
      * 供后续阶段通过 outputKey 占位符读取。
      */
     private String execute(String name, String path, AgentDefinition definition, String input,
-                           Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
-                           Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
-                           Consumer<PaiCliWorkflowEvent> listener,
-                           Object eventLock) {
+                            Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
+                            Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
+                            Consumer<PaiCliWorkflowEvent> listener,
+                            Object eventLock) {
         StageSpec stage = definition.stages().get(name);
         if (stage != null) {
             String instruction = interpolate(stage.instruction(), state) + stage.skills();
@@ -84,9 +84,7 @@ final class PaiCliWorkflowEngine {
                         PaiCliWorkflowEvent.Kind.STAGE_STARTED, name, ""));
                 String result;
                 try {
-                    result = ToolInvocationContext.call(context,
-                            () -> agent.run(input, input,
-                                    event -> forward(event, name, listener, eventLock)).content());
+                    result = ToolInvocationContext.call(context, () -> agent.run(input, input, event -> forward(event, name, listener, eventLock)).content());
                 } catch (RuntimeException error) {
                     throw error;
                 } catch (Exception error) {

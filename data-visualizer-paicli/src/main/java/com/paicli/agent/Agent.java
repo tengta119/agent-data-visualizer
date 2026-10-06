@@ -289,11 +289,9 @@ public class Agent {
                     // 内部 pending 缓冲区（仅按换行 flush）里的文本被 HITL 提示"跨过"
                     // 造成标题和内容错位。重置后下一轮迭代的 reasoning/content 会重新打印标题。
                     streamRenderer.resetBetweenIterations();
-                    renderer().appendToolCalls(
-                            turnToolPolicy.visibleToolCalls(response.toolCalls(), toolExposure));
+                    renderer().appendToolCalls(turnToolPolicy.visibleToolCalls(response.toolCalls(), toolExposure));
 
-                    List<ToolExecutionResult> toolResults = executeToolCalls(
-                            response.toolCalls(), iteration, turnToolPolicy, toolExposure);
+                    List<ToolExecutionResult> toolResults = executeToolCalls(response.toolCalls(), iteration, turnToolPolicy, toolExposure);
                     for (ToolExecutionResult toolResult : toolResults) {
                         appendConversationMessage(
                                 LlmClient.Message.tool(toolResult.id(), ToolResultBoundary.wrap(toolResult)),
@@ -856,10 +854,9 @@ public class Agent {
         reasoningTranscript.append(reasoningContent.trim());
     }
 
-    private List<ToolExecutionResult> executeToolCalls(List<LlmClient.ToolCall> toolCalls,
-                                                       int iteration,
-                                                       TurnToolPolicy turnToolPolicy,
-                                                       TurnToolPolicy.ToolExposure toolExposure) {
+    private List<ToolExecutionResult> executeToolCalls(List<LlmClient.ToolCall> toolCalls, int iteration,
+                                                        TurnToolPolicy turnToolPolicy,
+                                                        TurnToolPolicy.ToolExposure toolExposure) {
         List<ToolInvocation> invocations = new ArrayList<>();
         for (LlmClient.ToolCall toolCall : toolCalls) {
             String toolName = toolCall.function().name();

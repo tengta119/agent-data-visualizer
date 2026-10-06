@@ -85,8 +85,7 @@ public final class EmbeddedAgent implements AutoCloseable {
      * 复用同一 Agent 的会话历史，并串行执行 turn。
      * 每次执行单独绑定取消令牌；结束时解除绑定并关闭本次事件渲染器。
      */
-    public synchronized EmbeddedTurnResult run(String input, String submittedUserInput,
-                                               Consumer<EmbeddedEvent> listener) {
+    public synchronized EmbeddedTurnResult run(String input, String submittedUserInput, Consumer<EmbeddedEvent> listener) {
         if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("input must not be blank");
         }
@@ -101,8 +100,7 @@ public final class EmbeddedAgent implements AutoCloseable {
         EmbeddedRenderer renderer = new EmbeddedRenderer(listener);
         agent.setRenderer(renderer);
         try (CancellationContext.Scope ignored = CancellationContext.bind(token)) {
-            String result = agent.runExplicitTask(input,
-                    submittedUserInput == null ? input : submittedUserInput);
+            String result = agent.runExplicitTask(input, submittedUserInput == null ? input : submittedUserInput);
             return new EmbeddedTurnResult(result);
         } catch (AgentRunException error) {
             EmbeddedTurnException.Kind kind = switch (error.reason()) {
