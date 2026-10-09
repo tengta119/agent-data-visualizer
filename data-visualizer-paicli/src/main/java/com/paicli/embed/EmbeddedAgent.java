@@ -53,7 +53,7 @@ public final class EmbeddedAgent implements AutoCloseable {
     }
 
     public synchronized void registerMcpToolOutput(McpToolDescriptor descriptor,
-                                                   Function<String, ToolOutput> invoker) {
+                                                    Function<String, ToolOutput> invoker) {
         if (started) {
             throw new IllegalStateException("Cannot change tools after the first turn");
         }

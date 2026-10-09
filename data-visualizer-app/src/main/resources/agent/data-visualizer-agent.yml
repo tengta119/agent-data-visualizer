@@ -139,7 +139,7 @@ ai:
                 description: 标准绘图流程：分析 -> 绘图 -> 检查
                 sub-agents:
                   - agent_analyst
-                  - parallel_generation
+                  - agent_drawer
                   - agent_reviewer
             runner:
               # 指定入口为串行工作流，这是最稳健的配置

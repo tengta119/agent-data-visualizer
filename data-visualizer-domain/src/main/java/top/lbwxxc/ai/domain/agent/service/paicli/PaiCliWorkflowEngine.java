@@ -33,7 +33,7 @@ final class PaiCliWorkflowEngine {
     }
 
     PaiCliWorkflowEngine(PaiCliModelFactory models, Executor parallelExecutor,
-                         PaiCliToolInstaller toolInstaller) {
+                        PaiCliToolInstaller toolInstaller) {
         this.models = models;
         this.parallelExecutor = parallelExecutor;
         this.toolInstaller = toolInstaller;
@@ -116,10 +116,10 @@ final class PaiCliWorkflowEngine {
     }
 
     private String runSequence(WorkflowSpec workflow, String path, AgentDefinition definition, String input,
-                               Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
-                               Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
-                               Consumer<PaiCliWorkflowEvent> listener,
-                               Object eventLock) {
+                            Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
+                            Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
+                            Consumer<PaiCliWorkflowEvent> listener,
+                            Object eventLock) {
         String last = "";
         for (int i = 0; i < workflow.children().size(); i++) {
             last = execute(workflow.children().get(i), path + "/" + i, definition, input, state,
@@ -129,10 +129,10 @@ final class PaiCliWorkflowEngine {
     }
 
     private String runLoop(WorkflowSpec workflow, String path, AgentDefinition definition, String input,
-                           Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
-                           Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
-                           Consumer<PaiCliWorkflowEvent> listener,
-                           Object eventLock) {
+                            Map<String, String> state, Map<String, EmbeddedAgent> stageAgents,
+                            Set<EmbeddedAgent> activeAgents, CommandExecutionContext context,
+                            Consumer<PaiCliWorkflowEvent> listener,
+                            Object eventLock) {
         String last = "";
         for (int iteration = 0; iteration < workflow.iterations(); iteration++) {
             for (int i = 0; i < workflow.children().size(); i++) {

@@ -175,6 +175,8 @@ sequenceDiagram
 
 `ResponseBodyEmitter` 超时为 20 分钟。控制器使用专用的流式任务执行器和可取消的 `Future`；完成、超时和断开时幂等取消工作流、待审批项及请求专属 shell。前端按 JSON 花括号边界增量解析响应。
 
+模型正文仍以 token delta 回调，但 HTTP 日志由每次请求独立的 `WorkflowStreamLogPublisher` 按阶段聚合：遇到换行或累计 256 个 UTF-16 单元时发送一段（不切断代理对），过滤纯空白段；工具、状态及阶段事件前刷新对应阶段正文，最终结果或错误前刷新所有尾部正文。前端不再为每个 token 创建独立日志卡片，流式消息协议不变。
+
 流式消息类型为 `log/result/error/done`，另有审批类型 `approval_required`/`approval_resolved`（stage=approval）。命令命中审批规则时，`CommandApprovalService` 创建待审批记录并通过 Bridge 发送 `approval_required`；用户决定经 `POST /api/v1/chat_stream/{requestId}/approval` 提交，Controller 只发布 Spring ApplicationEvent（进程内同步），监听器完成 `PENDING → APPROVED/REJECTED/EXPIRED/CANCELLED` 原子迁移并唤醒等待中的 `ShellExecutor`，随后发送 `approval_resolved`。待审批记录的并发数量受两级上限约束：整个 JVM 的 `command.execution.policy.max-pending-approvals`（默认 5）与单个 requestId 的 `max-pending-approvals-per-request`（默认 1）；超限的命令不创建记录、不发送审批事件、不进入等待，直接返回 `forbidden`，从而不会占用 Agent 执行线程。
 
 命令执行上下文（requestId 等）作为不可变值传给工作流，并由 PaiCLI 的 `ToolInvocationContext` 显式带入并行工具线程。仅在 Shell 工具适配器入口设置 `CommandExecutionContextHolder`，在同一线程的 `finally` 中清理；无流式上下文时 Prompt 命令安全失败。取消会传至 PaiCLI 模型和工具调用，但已送往外部进程或远程主机的副作用不保证可撤销。

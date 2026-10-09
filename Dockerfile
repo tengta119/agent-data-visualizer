@@ -2,6 +2,7 @@ FROM maven:3.9.9-eclipse-temurin-17 AS backend-builder
 WORKDIR /workspace
 
 COPY pom.xml ./pom.xml
+COPY data-visualizer-paicli ./data-visualizer-paicli
 COPY data-visualizer-api ./data-visualizer-api
 COPY data-visualizer-app ./data-visualizer-app
 COPY data-visualizer-domain ./data-visualizer-domain

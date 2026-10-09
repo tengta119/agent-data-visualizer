@@ -21,7 +21,7 @@ import top.lbwxxc.ai.domain.agent.service.armory.matter.mcp.server.shell.approva
 import top.lbwxxc.ai.domain.agent.service.chat.converter.JsonToDrawioConverter;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamBridge;
 import top.lbwxxc.ai.domain.agent.service.chat.stream.AgentStreamResponseDTO;
-import top.lbwxxc.ai.domain.agent.service.paicli.PaiCliWorkflowEvent;
+import top.lbwxxc.ai.domain.agent.service.chat.stream.WorkflowStreamLogPublisher;
 import top.lbwxxc.ai.domain.agent.service.paicli.PaiCliWorkflowResult;
 import top.lbwxxc.ai.types.enums.ResponseCode;
 import top.lbwxxc.ai.types.exception.AppException;
@@ -215,16 +215,19 @@ public class AgentServiceController implements IAgentService {
             agentStreamBridge.register(currentSessionId, currentRequestId, emitter);
 
             Future<?> task = STREAM_EXECUTOR.submit(() -> {
+                WorkflowStreamLogPublisher logPublisher = new WorkflowStreamLogPublisher(
+                        (stage, content) -> agentStreamBridge.publishLog(currentRequestId, stage, content));
                 try {
                     if (cleaned.get()) {
                         return;
                     }
                     PaiCliWorkflowResult result = chatService.handleMessageStream(
                             context.agentId(), context.userId(), context.sessionId(), context,
-                            requestDTO.getMessage(), event -> publishWorkflowEvent(context, event));
+                            requestDTO.getMessage(), logPublisher);
                     if (cleaned.get()) {
                         return;
                     }
+                    logPublisher.flush();
                     ChatResponseDTO response = parseChatResponse(result.content(), result.content());
                     agentStreamBridge.publish(AgentStreamResponseDTO.builder()
                             .type("result")
@@ -240,6 +243,7 @@ public class AgentServiceController implements IAgentService {
                     log.error("流式对话失败 sessionId:{} requestId:{}", currentSessionId, currentRequestId, error);
                     if (!cleaned.get()) {
                         try {
+                            logPublisher.flush();
                             sendStreamError(currentRequestId, error);
                         } catch (RuntimeException sendFailure) {
                             log.debug("流式错误消息无法发送 requestId:{}", currentRequestId, sendFailure);
@@ -261,14 +265,6 @@ public class AgentServiceController implements IAgentService {
         }
 
         return emitter;
-    }
-
-    private void publishWorkflowEvent(CommandExecutionContext context, PaiCliWorkflowEvent event) {
-        if (event.kind() == PaiCliWorkflowEvent.Kind.STAGE_COMPLETED) {
-            agentStreamBridge.publishLog(context.requestId(), event.stage(), "stage completed");
-        } else {
-            agentStreamBridge.publishLog(context.requestId(), event.stage(), event.content());
-        }
     }
 
     /** 审批决定按 requestId 与 approvalId 定位；实际状态迁移由同步事件监听器完成。 */

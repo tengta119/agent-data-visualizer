@@ -52,13 +52,21 @@ class PaiCliControllerContractTest {
         String detail = "Tool call failed [mcp__ShellExecutor__execute]: commandType must be local or remote";
         when(chat.handleMessageStream(eq("agent"), eq("user"), eq("session"),
                 any(CommandExecutionContext.class), eq("query hardware"), any()))
-                .thenThrow(new EmbeddedTurnException(EmbeddedTurnException.Kind.TOOL, detail, null));
+                .thenAnswer(invocation -> {
+                    java.util.function.Consumer<PaiCliWorkflowEvent> listener = invocation.getArgument(5);
+                    listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.CONTENT_DELTA, "analyst", "查询"));
+                    listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.CONTENT_DELTA, "analyst", "硬件"));
+                    throw new EmbeddedTurnException(EmbeddedTurnException.Kind.TOOL, detail, null);
+                });
 
         controller.chatStream(request);
         assertTrue(bridge.failed.await(3, TimeUnit.SECONDS));
         AgentStreamResponseDTO error = bridge.events.stream()
                 .filter(event -> "error".equals(event.getType())).findFirst().orElseThrow();
         assertEquals(detail, error.getContent());
+        assertEquals(List.of("log", "error"), bridge.events.stream().map(AgentStreamResponseDTO::getType).toList());
+        assertEquals("查询硬件", bridge.events.get(0).getContent());
+        assertEquals(error.getRequestId(), bridge.events.get(0).getRequestId());
         assertTrue(error.getRequestId() != null && !error.getRequestId().isBlank());
         assertEquals(0, bridge.events.stream().filter(event -> "result".equals(event.getType())).count());
     }
@@ -83,13 +91,22 @@ class PaiCliControllerContractTest {
                 any(CommandExecutionContext.class), eq("draw"), any())).thenAnswer(invocation -> {
             java.util.function.Consumer<PaiCliWorkflowEvent> listener = invocation.getArgument(5);
             listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.STAGE_STARTED, "analyst", ""));
+            listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.CONTENT_DELTA, "analyst", "需求"));
+            listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.CONTENT_DELTA, "analyst", "分析\n\n"));
             listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.STAGE_COMPLETED, "analyst", "intermediate"));
+            listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.CONTENT_DELTA, "reviewer", "审查"));
+            listener.accept(new PaiCliWorkflowEvent(PaiCliWorkflowEvent.Kind.CONTENT_DELTA, "reviewer", "完成"));
             return result;
         });
 
         String synchronousXml = controller.chat(request).getData().getContent();
         controller.chatStream(request);
         assertTrue(bridge.done.await(3, TimeUnit.SECONDS));
+        assertEquals(List.of("stage started", "需求分析\n", "stage completed", "审查完成"),
+                bridge.events.stream().filter(event -> "log".equals(event.getType()))
+                        .map(AgentStreamResponseDTO::getContent).toList());
+        assertEquals(List.of("log", "log", "log", "log", "result", "done"),
+                bridge.events.stream().map(AgentStreamResponseDTO::getType).toList());
 
         List<AgentStreamResponseDTO> terminal = bridge.events.stream()
                 .filter(event -> "result".equals(event.getType()) || "done".equals(event.getType())).toList();
